@@ -1,0 +1,1307 @@
+Aaaaaaaaaaa very important code impulse vector formation 
+
+
+/* ================================================================
+SOM UNIT III — FALLING WEIGHT IMPACT
+APDE / PROCESSING ANDROID
+COMPLETE 3D ENGINEERING VISUALIZATION
+
+FINAL CONTACT-CENTER + DUAL SLOW-MOTION VERSION
+(ULTRA SLOW MOTION + X-RAY COLOR CYCLING + FLOATING AR HUD)
+*NOW WITH PRECISE FEA JET COLORMAP & STRESS MULTIPLIER SLIDER*
+================================================================
+*/
+
+// ================================================================
+// STATES & SCREENS
+// ================================================================
+
+final int READY = 0;
+final int FALLING = 1;
+final int IMPACT = 2;
+final int WAVE = 3;
+final int SETTLED = 4;
+
+int state = READY;
+boolean viewDataScreen = false; // Screen toggle
+
+// ================================================================
+// ENGINEERING PARAMETERS
+// ================================================================
+
+float P = 100.0;
+float H = 3000.0;
+float L = 6000.0;
+float D = 20.0;
+float E = 2.0e5;
+
+float G = 9810.0;
+float rho = 7850.0;
+
+// ================================================================
+// COEFFICIENT OF RESTITUTION
+// ================================================================
+
+float restitutionCoefficient = 0.0;
+float velocityBeforeImpact = 0.0;
+float velocityAfterImpact = 0.0;
+
+// ================================================================
+// CALCULATED VALUES
+// ================================================================
+
+float A;
+float staticStress;
+float staticExtension;
+float impactVelocity;
+float impactFactor;
+float sigmaMax;
+float FMAX;
+float maxExtension;
+float maxStrain;
+float potentialEnergy;
+float kineticEnergy;
+float strainEnergy;
+float waveSpeed;
+float waveSpeedMmPerMs;
+float waveTravelTime;
+
+// ================================================================
+// VISUAL NAIL GEOMETRY
+// ================================================================
+
+float visualNailLength = 700.0;
+float visualNailRadius = 15.0;
+float nailHeadRadius = 42.0;
+float nailHeadHeight = 18.0;
+
+// ================================================================
+// EXACT WORLD CONTACT GEOMETRY
+// ================================================================
+
+float nailWorldBaseY = -300.0;
+float impactHeadOffsetY = -45.0;
+float contactSurfaceOffsetY = -1.0;
+float contactWorldY;
+float contactWeightCenterWorldY;
+float impactTargetWeightY;
+
+// ================================================================
+// FALLING WEIGHT
+// ================================================================
+
+float weightY = 0.0;
+float weightVelocity = 0.0;
+float visualGravity = 0.65;
+
+// ================================================================
+// DUAL ANIMATION SPEED CONTROLS
+// ================================================================
+
+float fallAnimationSpeed = 0.20;
+float minFallSpeed = 0.02;
+float maxFallSpeed = 1.00;
+
+float impactAnimationSpeed = 0.10;
+float minImpactSpeed = 0.001; 
+float maxImpactSpeed = 1.00;
+
+// Color Stress Multiplier (Controls color intensity & blink speed)
+float stressIntensity = 1.0;
+float minStress = 0.1;
+float maxStress = 5.0;
+
+// ================================================================
+// IMPACT PULSE
+// ================================================================
+
+float peakTimeMs = 0.8;
+float pulseEndMs = 6.0;
+float impactTimeMs = 0.0;
+float redPulse = 0.0;
+
+// ================================================================
+// CONTACT SWEEP
+// ================================================================
+
+float contactSweepX = 0.0;
+boolean contactActive = false;
+
+// ================================================================
+// IMPACT VECTOR VISUAL (DRAGGABLE)
+// ================================================================
+
+float impactVectorMinimum = 15.0;
+float impactVectorMaximum = 270.0;
+
+float vectorScreenX = 0.0;
+float vectorScreenY = 0.0;
+boolean vectorDragging = false;
+boolean vectorDetached = false;
+float vectorDragOffsetX = 0.0;
+float vectorDragOffsetY = 0.0;
+
+// ================================================================
+// FORCE CURVE VISUAL
+// ================================================================
+
+float contactCurveHeight = 110.0;
+float contactCurveWidth = 1.8;
+
+// ================================================================
+// STRESS WAVE & PENETRATION
+// ================================================================
+
+float waveDistance = 0.0;
+float decayLength = 400.0;
+float waveVisualScale = 1.0;
+float totalPenetration = 0.0;
+
+// ================================================================
+// CAMERA
+// ================================================================
+
+float rotX = -0.12;
+float rotY = 0.0;
+float zoom = 1.0;
+boolean cameraDragging = false;
+float lastMouseX = 0.0;
+float lastMouseY = 0.0;
+
+// ================================================================
+// FONTS & COLORS
+// ================================================================
+
+PFont regularFont;
+PFont boldFont;
+
+color steelColor = color(125, 135, 150);
+color steelDark = color(60, 70, 85);
+color gravityColor = color(110, 190, 255);
+color panelColor = color(5, 10, 18, 235);
+color hotWhite = color(255, 255, 255);
+
+// UI Texts & Labels Colors
+color uiCyan = color(30, 220, 255);
+color uiYellow = color(255, 225, 30);
+color uiOrange = color(255, 130, 20);
+color uiRed = color(255, 50, 40);
+color uiGreen = color(50, 255, 120);
+
+// ================================================================
+// UI ELEMENT COORDINATES
+// ================================================================
+
+// Buttons
+float dropBtnX, dropBtnY, dropBtnW, dropBtnH;
+float resetBtnX, resetBtnY, resetBtnW, resetBtnH;
+float viewDataBtnX, viewDataBtnY, viewDataBtnW, viewDataBtnH;
+float backBtnX, backBtnY, backBtnW, backBtnH;
+
+// Sliders
+float fallPanelX, fallPanelY, fallPanelW, fallPanelH = 95;
+boolean fallSliderDragging = false, fallPanelDragging = false;
+float fallDragOffsetX = 0, fallDragOffsetY = 0;
+
+float impactPanelX, impactPanelY, impactPanelW, impactPanelH = 95;
+boolean impactSliderDragging = false, impactPanelDragging = false;
+float impactDragOffsetX = 0, impactDragOffsetY = 0;
+
+// Stress Intensity Slider
+float stressPanelX, stressPanelY, stressPanelW, stressPanelH = 95;
+boolean stressSliderDragging = false, stressPanelDragging = false;
+float stressDragOffsetX = 0, stressDragOffsetY = 0;
+
+// Graph
+float graphX, graphY, graphW, graphH = 260;
+boolean graphDragging = false;
+float graphDragOffsetX = 0, graphDragOffsetY = 0;
+
+// ================================================================
+// SETUP
+// ================================================================
+
+void setup() {
+  fullScreen(P3D);
+  smooth(8);
+
+  regularFont = createFont("sans-serif", 20, true);
+  boldFont = createFont("sans-serif", 26, true);
+  textFont(regularFont);
+
+  calculateContactGeometry();
+  calculatePhysics();
+  initializePanels();
+  resetSimulation();
+}
+
+void calculateContactGeometry() {
+  contactWorldY = nailWorldBaseY + impactHeadOffsetY + contactSurfaceOffsetY;
+  contactWeightCenterWorldY = contactWorldY - 65.0;
+  impactTargetWeightY = contactWeightCenterWorldY + 650.0;
+}
+
+void initializePanels() {
+  graphW = min(460, width - 30);
+  fallPanelW = min(400, width * 0.9);
+  impactPanelW = min(520, width * 0.9);
+  stressPanelW = min(400, width * 0.9);
+
+  graphX = width - graphW - 15;
+  graphY = 65;
+  
+  stressPanelX = 15;
+  stressPanelY = 65;
+  
+  float baseOffset = (width > 480) ? 170 : 240;
+  
+  if (width > fallPanelW + impactPanelW + 40) {
+    fallPanelX = width / 2.0 - fallPanelW - 10;
+    fallPanelY = height - baseOffset;
+    impactPanelX = width / 2.0 + 10;
+    impactPanelY = height - baseOffset;
+  } else {
+    fallPanelX = width / 2.0 - fallPanelW / 2.0;
+    fallPanelY = height - baseOffset - fallPanelH - 15;
+    impactPanelX = width / 2.0 - impactPanelW / 2.0;
+    impactPanelY = height - baseOffset;
+  }
+  
+  // Screen Navigation Buttons
+  viewDataBtnW = 150; viewDataBtnH = 45;
+  viewDataBtnX = width - viewDataBtnW - 15;
+  viewDataBtnY = 15;
+
+  backBtnW = 120; backBtnH = 45;
+  backBtnX = 15;
+  backBtnY = 15;
+  
+  constrainPanels();
+}
+
+void constrainPanels() {
+  graphX = constrain(graphX, 5, max(5, width - graphW - 5));
+  graphY = constrain(graphY, 5, max(5, height - graphH - 5));
+  
+  stressPanelX = constrain(stressPanelX, 5, max(5, width - stressPanelW - 5));
+  stressPanelY = constrain(stressPanelY, 5, max(5, height - stressPanelH - 5));
+  
+  fallPanelX = constrain(fallPanelX, 5, max(5, width - fallPanelW - 5));
+  fallPanelY = constrain(fallPanelY, 5, max(5, height - fallPanelH - 5));
+  
+  impactPanelX = constrain(impactPanelX, 5, max(5, width - impactPanelW - 5));
+  impactPanelY = constrain(impactPanelY, 5, max(5, height - impactPanelH - 5));
+}
+
+void calculatePhysics() {
+  A = PI * D * D / 4.0;
+  staticStress = P / A;
+  staticExtension = P * L / (A * E);
+  impactVelocity = sqrt(2.0 * G * H);
+  
+  float insideRoot = 1.0 + 2.0 * H / staticExtension;
+  impactFactor = 1.0 + sqrt(insideRoot);
+  
+  sigmaMax = staticStress * impactFactor;
+  FMAX = sigmaMax * A;
+  maxExtension = sigmaMax * L / E;
+  maxStrain = sigmaMax / E;
+  
+  potentialEnergy = P * H;
+  kineticEnergy = potentialEnergy;
+  strainEnergy = sigmaMax * sigmaMax * A * L / (2.0 * E);
+  
+  float EPa = E * 1000000.0;
+  waveSpeed = sqrt(EPa / rho);
+  waveSpeedMmPerMs = waveSpeed;
+  waveTravelTime = L / waveSpeedMmPerMs;
+  
+  velocityBeforeImpact = impactVelocity;
+  velocityAfterImpact = -restitutionCoefficient * velocityBeforeImpact;
+}
+
+void resetSimulation() {
+  calculateContactGeometry();
+  calculatePhysics();
+  
+  state = READY;
+  weightY = 0.0;
+  weightVelocity = 0.0;
+  impactTimeMs = 0.0;
+  waveDistance = 0.0;
+  totalPenetration = 0.0;
+  redPulse = 0.0;
+  contactSweepX = -nailHeadRadius;
+  contactActive = false;
+  
+  velocityBeforeImpact = impactVelocity;
+  velocityAfterImpact = 0.0;
+  
+  rotX = -0.12;
+  rotY = 0.0;
+  zoom = 1.0;
+  
+  cameraDragging = false;
+  graphDragging = false;
+  stressSliderDragging = false; stressPanelDragging = false;
+  fallSliderDragging = false; fallPanelDragging = false;
+  impactSliderDragging = false; impactPanelDragging = false;
+  
+  vectorDetached = false;
+  vectorDragging = false;
+  
+  initializePanels();
+}
+
+// ================================================================
+// MAIN DRAW LOOP
+// ================================================================
+
+void draw() {
+  updatePhysics(); 
+  
+  if (viewDataScreen) {
+    drawDataScreen();
+  } else {
+    background(5, 8, 14);
+    drawEngineeringScene();
+    drawMainHUD();
+  }
+}
+
+// ================================================================
+// UPDATE PHYSICS
+// ================================================================
+
+void updatePhysics() {
+  if (state == FALLING) {
+    float animationGravity = visualGravity * fallAnimationSpeed;
+    weightVelocity += animationGravity;
+    weightY += weightVelocity;
+    
+    if (weightY >= impactTargetWeightY) {
+      weightY = impactTargetWeightY;
+      velocityBeforeImpact = impactVelocity;
+      velocityAfterImpact = -restitutionCoefficient * velocityBeforeImpact;
+      weightVelocity = 0.0;
+      
+      state = IMPACT;
+      impactTimeMs = 0.0;
+      waveDistance = 0.0;
+      redPulse = 0.0;
+      contactSweepX = -nailHeadRadius;
+      contactActive = true;
+    }
+  }
+  else if (state == IMPACT || state == WAVE) {
+    float frameMs = 1000.0 / max(1.0, frameRate);
+    float impactDt = frameMs * impactAnimationSpeed;
+    
+    float currentEnvelope = forceEnvelope(impactTimeMs);
+    redPulse = currentEnvelope;
+    weightVelocity = 0.0;
+    
+    float penetrationStep = currentEnvelope * impactDt * 0.015;
+    totalPenetration += penetrationStep;
+    weightY = impactTargetWeightY + totalPenetration;
+    
+    impactTimeMs += impactDt;
+    
+    if (impactTimeMs <= pulseEndMs) {
+      float progress = constrain(impactTimeMs / pulseEndMs, 0.0, 1.0);
+      contactSweepX = map(progress, 0.0, 1.0, -nailHeadRadius, nailHeadRadius);
+      contactActive = true;
+    } else {
+      contactActive = false;
+      contactSweepX = nailHeadRadius;
+    }
+    
+    waveDistance = min(L, impactTimeMs * waveSpeedMmPerMs);
+    
+    if (state == IMPACT && impactTimeMs > pulseEndMs) {
+      state = WAVE;
+    }
+    
+    if (state == WAVE && waveDistance >= L) {
+      state = SETTLED;
+    }
+  }
+  else if (state == SETTLED) {
+    weightVelocity = 0.0;
+    contactActive = false;
+    waveDistance = L;
+    redPulse *= 0.96;
+  }
+}
+
+float forceEnvelope(float t) {
+  if (t <= 0.0 || t > pulseEndMs) return 0.0;
+  float ratio = t / peakTimeMs;
+  float value = ratio * exp(1.0 - ratio);
+  return constrain(value, 0.0, 1.0);
+}
+
+// ================================================================
+// FEA JET/RAINBOW COLORMAP ENGINE
+// ================================================================
+
+color getSmoothHeatMap(float rawIntensity) {
+  float intensity = constrain(rawIntensity, 0.0, 1.0);
+  
+  // Exact FEA (Von Mises) Rainbow Color Interpolation
+  if (intensity < 0.05) {
+    // 0.00 - 0.05: Transition out of Steel base into Deep Blue
+    return lerpColor(steelColor, color(0, 0, 150), intensity / 0.05);
+  } else if (intensity < 0.25) {
+    // 0.05 - 0.25: Deep Blue to Cyan
+    return lerpColor(color(0, 0, 150), color(0, 200, 255), (intensity - 0.05) / 0.20);
+  } else if (intensity < 0.50) {
+    // 0.25 - 0.50: Cyan to Bright Green
+    return lerpColor(color(0, 200, 255), color(0, 220, 0), (intensity - 0.25) / 0.25);
+  } else if (intensity < 0.75) {
+    // 0.50 - 0.75: Bright Green to Yellow
+    return lerpColor(color(0, 220, 0), color(255, 220, 0), (intensity - 0.50) / 0.25);
+  } else if (intensity < 0.90) {
+    // 0.75 - 0.90: Yellow to Orange
+    return lerpColor(color(255, 220, 0), color(255, 100, 0), (intensity - 0.75) / 0.15);
+  } else {
+    // 0.90 - 1.00: Orange to Deep Red (Max Stress)
+    return lerpColor(color(255, 100, 0), color(200, 0, 0), (intensity - 0.90) / 0.10);
+  }
+}
+
+// ================================================================
+// 3D ENGINEERING SCENE (SCREEN 1)
+// ================================================================
+
+void drawEngineeringScene() {
+  pushMatrix();
+  translate(width * 0.55, height * 0.55, -450);
+  scale(zoom);
+  rotateX(rotX);
+  rotateY(rotY);
+  
+  lights();
+  directionalLight(255, 255, 255, -0.5, -1.0, -0.8);
+  pointLight(100, 180, 255, 0, -400, 500);
+
+  drawGravityField();
+  drawFloor();
+  drawSupportBlock();
+  drawNail();
+  drawFallingWeight();
+
+  if (state == FALLING) {
+    drawVelocityVector();
+  }
+  
+  if (contactActive && !vectorDetached) {
+    float impactY = contactWorldY + totalPenetration; 
+    vectorScreenX = screenX(0, impactY, 0);
+    vectorScreenY = screenY(0, impactY, 0);
+  }
+  
+  hint(DISABLE_DEPTH_TEST);
+  
+  if (contactActive) {
+    drawContactForceCurve();
+    drawContactReferencePoint();
+    drawContactGlow();
+  }
+  
+  if (state >= IMPACT) {
+    drawStressWave();
+    drawImpulseRings();
+    drawStressVectors();
+  }
+  
+  hint(ENABLE_DEPTH_TEST);
+  popMatrix();
+}
+
+void drawGravityField() {
+  for (float x = -500; x <= 500; x += 100) {
+    for (float z = -250; z <= 250; z += 100) {
+      drawGravityArrow(x, -520, z);
+    }
+  }
+}
+
+void drawGravityArrow(float x, float y, float z) {
+  float length = 55;
+  stroke(gravityColor, 65);
+  strokeWeight(2);
+  line(x, y, z, x, y + length, z);
+  
+  pushMatrix();
+  translate(x, y + length, z);
+  noStroke();
+  fill(gravityColor, 65);
+  beginShape(TRIANGLES);
+  vertex(0, 14, 0);
+  vertex(-7, 0, -4);
+  vertex(7, 0, -4);
+  vertex(0, 14, 0);
+  vertex(7, 0, 4);
+  vertex(-7, 0, 4);
+  endShape();
+  popMatrix();
+}
+
+void drawFloor() {
+  pushMatrix();
+  translate(0, 500, 0);
+  rotateX(HALF_PI);
+  rectMode(CENTER);
+  noStroke();
+  fill(18, 24, 34);
+  rect(0, 0, 1500, 1000);
+  
+  stroke(40, 55, 75);
+  strokeWeight(1);
+  for (int x = -750; x <= 750; x += 100) { line(x, -500, x, 500); }
+  for (int y = -500; y <= 500; y += 100) { line(-750, y, 750, y); }
+  popMatrix();
+}
+
+void drawSupportBlock() {
+  pushMatrix();
+  translate(0, 450, 0);
+  noStroke();
+  fill(65, 75, 90);
+  box(300, 120, 300);
+  
+  pushMatrix();
+  translate(0, -75, 0);
+  fill(100, 110, 125);
+  box(180, 30, 180);
+  popMatrix();
+  popMatrix();
+}
+
+void drawNail() {
+  pushMatrix();
+  translate(0, nailWorldBaseY + totalPenetration, 0);
+  drawStressNail(visualNailRadius, visualNailLength, 64);
+  
+  pushMatrix();
+  translate(0, -25, 0);
+  drawCylinder(visualNailRadius * 2.8, 35, 64);
+  popMatrix();
+  
+  pushMatrix();
+  translate(0, impactHeadOffsetY, 0);
+  drawImpactHead();
+  popMatrix();
+  
+  pushMatrix();
+  translate(0, visualNailLength, 0);
+  drawNailTip(visualNailRadius, 70);
+  popMatrix();
+  popMatrix();
+}
+
+void drawImpactHead() {
+  noStroke();
+  fill(145, 155, 170);
+  drawCylinder(nailHeadRadius, nailHeadHeight, 64);
+  
+  pushMatrix();
+  translate(0, contactSurfaceOffsetY, 0);
+  drawDiskXZ(nailHeadRadius, color(175, 185, 200));
+  popMatrix();
+}
+
+void drawStressNail(float radius, float h, int sides) {
+  noStroke();
+  beginShape(QUAD_STRIP);
+  for (int i = 0; i <= sides; i++) {
+    float angle = TWO_PI * i / sides;
+    float x = cos(angle) * radius;
+    float z = sin(angle) * radius;
+    fill(stressColorAtDistance(0));
+    vertex(x, 0, z);
+    fill(stressColorAtDistance(h));
+    vertex(x, h, z);
+  }
+  endShape();
+  drawNailGrid(radius, h, sides);
+}
+
+void drawNailGrid(float radius, float h, int sides) {
+  strokeWeight(1.3);
+  for (int i = 0; i < 16; i++) {
+    float angle = TWO_PI * i / 16.0;
+    float x = cos(angle) * radius * 1.01;
+    float z = sin(angle) * radius * 1.01;
+    stroke(80, 100, 125, 180);
+    line(x, 0, z, x, h, z);
+  }
+  for (int j = 0; j <= 30; j++) {
+    float y = h * j / 30.0;
+    drawRingXZ(0, y, radius * 2.02, stressColorAtDistance(y));
+  }
+}
+
+color stressColorAtDistance(float distance) {
+  if (state < IMPACT) return steelColor;
+  
+  float propagationTime = distance / waveSpeedMmPerMs;
+  float localTime = impactTimeMs - propagationTime;
+  float envelope = forceEnvelope(localTime);
+  float decay = exp(-distance / decayLength);
+  float intensity = envelope * decay;
+  
+  if (localTime > pulseEndMs) {
+    float residual = exp(-(localTime - pulseEndMs) / 10.0) * decay;
+    intensity = max(intensity, residual * 0.55);
+  }
+  
+  // Apply Stress Multiplier scale
+  return getSmoothHeatMap(intensity * stressIntensity);
+}
+
+void drawVelocityVector() {
+  float velocityRatio = constrain(weightVelocity / max(0.001, impactVelocity / 70.0), 0.0, 1.0);
+  float vectorLength = 35 + 230 * velocityRatio;
+  float originY = -650 + weightY + 68;
+  float blink = 0.5 + 0.5 * sin(millis() * 0.010);
+  
+  pushMatrix();
+  translate(0, originY, 0);
+  stroke(uiYellow, 55 + 75 * blink); strokeWeight(12); line(0, 0, 0, 0, vectorLength, 0);
+  stroke(uiYellow, 220 + 35 * blink); strokeWeight(5); line(0, 0, 0, 0, vectorLength, 0);
+  stroke(255, 255, 180, 245); strokeWeight(2); line(0, 0, 0, 0, vectorLength, 0);
+  
+  pushMatrix();
+  translate(0, vectorLength, 0);
+  noStroke(); fill(uiYellow, 240); drawDownArrowHead(28, 18, 10);
+  popMatrix();
+  popMatrix();
+}
+
+void drawContactForceCurve() {
+  if (!contactActive) return;
+  pushMatrix();
+  translate(0, contactWorldY - (nailWorldBaseY + totalPenetration), 0);
+  
+  float progress = constrain(impactTimeMs / pulseEndMs, 0.0, 1.0);
+  float centerX = map(progress, 0.0, 1.0, -nailHeadRadius, nailHeadRadius);
+  
+  noFill(); stroke(getSmoothHeatMap(redPulse * stressIntensity), 255); strokeWeight(3 + 5 * redPulse);
+  beginShape();
+  int samples = 120;
+  float visibleWidth = nailHeadRadius * contactCurveWidth / 18.0;
+  for (int i = 0; i <= samples; i++) {
+    float u = map(i, 0, samples, -1.0, 1.0);
+    float x = centerX + u * visibleWidth;
+    float localTime = impactTimeMs + u * peakTimeMs;
+    float envelope = forceEnvelope(localTime);
+    float curveY = -envelope * contactCurveHeight;
+    x = constrain(x, -nailHeadRadius, nailHeadRadius);
+    vertex(x, curveY, 0);
+  }
+  endShape();
+  popMatrix();
+}
+
+void drawContactReferencePoint() {
+  if (!contactActive) return;
+  pushMatrix();
+  translate(0, contactWorldY - (nailWorldBaseY + totalPenetration), 0);
+  float blinkFrequency = 0.01 + 0.01 * stressIntensity; // BLINK SPEED MULTIPLIER
+  float blink = 0.5 + 0.5 * sin(millis() * blinkFrequency);
+  color dynamicColor = getSmoothHeatMap(redPulse * stressIntensity);
+  noStroke(); fill(dynamicColor, 180 + 75 * blink);
+  sphereDetail(12); sphere(5 + 7 * redPulse);
+  popMatrix();
+}
+
+void drawContactGlow() {
+  if (!contactActive) return;
+  pushMatrix();
+  translate(contactSweepX, contactWorldY - (nailWorldBaseY + totalPenetration) - 2, 0);
+  float blinkFrequency = 0.01 + 0.01 * stressIntensity; // BLINK SPEED MULTIPLIER
+  float blink = 0.5 + 0.5 * sin(millis() * blinkFrequency);
+  color glowColor = getSmoothHeatMap(redPulse * stressIntensity);
+  for (int i = 0; i < 5; i++) {
+    float diameter = 20 + i * 14;
+    stroke(glowColor, (130 - i * 22) * redPulse * blink);
+    strokeWeight(max(1, 4 - i * 0.5));
+    noFill(); ellipseXZ(0, 0, diameter);
+  }
+  popMatrix();
+}
+
+void drawStressWave() {
+  if (state < IMPACT) return;
+  pushMatrix();
+  translate(0, nailWorldBaseY + totalPenetration, 0);
+  
+  float waveY = constrain(waveDistance, 0, visualNailLength);
+  float localTime = impactTimeMs - waveY / waveSpeedMmPerMs;
+  float localEnvelope = forceEnvelope(localTime);
+  float localDecay = exp(-waveY / decayLength);
+  float intensity = constrain(localEnvelope * localDecay * waveVisualScale, 0.0, 1.0);
+  
+  color waveColor = getSmoothHeatMap(intensity * stressIntensity);
+  
+  noFill();
+  stroke(waveColor, 230 * max(0.15, intensity)); strokeWeight(5); drawRingXZ(0, waveY, 60);
+  stroke(hotWhite, 160 * max(0.15, intensity)); strokeWeight(2); drawRingXZ(0, waveY, 90);
+  popMatrix();
+}
+
+void drawImpulseRings() {
+  pushMatrix();
+  translate(0, nailWorldBaseY + totalPenetration, 0);
+  for (int i = 0; i < 12; i++) {
+    float distance = waveDistance - i * 28;
+    if (distance < 0) continue;
+    float alpha = 220 - i * 16;
+    float radius = 25 + i * 8;
+    float timeAtDistance = impactTimeMs - distance / waveSpeedMmPerMs;
+    float intensity = forceEnvelope(timeAtDistance) * exp(-distance / decayLength);
+    drawRingXZ(0, distance, radius, color(getSmoothHeatMap(intensity * stressIntensity), max(0, alpha)));
+  }
+  popMatrix();
+}
+
+void drawStressVectors() {
+  pushMatrix();
+  translate(0, nailWorldBaseY + totalPenetration, 0);
+  for (int i = 0; i < 12; i++) {
+    float distance = i * (L / 12.0);
+    float timeAtDistance = impactTimeMs - distance / waveSpeedMmPerMs;
+    float envelope = forceEnvelope(timeAtDistance);
+    float decay = exp(-distance / decayLength);
+    float strength = envelope * decay;
+    if (strength > 0.01) {
+      float visualY = map(distance, 0, L, 0, visualNailLength);
+      drawDownVector(0, visualY, 0, 80 * strength, strength);
+    }
+  }
+  popMatrix();
+}
+
+void drawDownVector(float x, float y, float z, float length, float intensity) {
+  color vectorColor = getSmoothHeatMap(intensity * stressIntensity);
+  stroke(vectorColor, 255 * intensity); strokeWeight(2 + 5 * intensity);
+  line(x, y, z, x, y + length, z);
+  pushMatrix(); translate(x, y + length, z);
+  noStroke(); fill(vectorColor, 255 * intensity); drawDownArrowHead(22, 12, 5);
+  popMatrix();
+}
+
+void drawDownArrowHead(float tipLength, float baseWidth, float depth) {
+  beginShape(TRIANGLES);
+  vertex(0, tipLength, 0); vertex(-baseWidth, 0, -depth); vertex(baseWidth, 0, -depth);
+  vertex(0, tipLength, 0); vertex(baseWidth, 0, depth); vertex(-baseWidth, 0, depth);
+  vertex(0, tipLength, 0); vertex(-baseWidth, 0, depth); vertex(-baseWidth, 0, -depth);
+  vertex(0, tipLength, 0); vertex(baseWidth, 0, -depth); vertex(baseWidth, 0, depth);
+  endShape();
+}
+
+void drawFallingWeight() {
+  pushMatrix();
+  float worldY = -650 + weightY;
+  translate(0, worldY, 0);
+  noStroke(); fill(105, 115, 130); box(150, 100, 150);
+  pushMatrix(); translate(0, 55, 0); fill(160, 170, 185); box(115, 20, 115); popMatrix();
+  popMatrix();
+}
+
+void drawCylinder(float radius, float h, int sides) {
+  noStroke();
+  beginShape(QUAD_STRIP);
+  for (int i = 0; i <= sides; i++) {
+    float angle = TWO_PI * i / sides;
+    float x = cos(angle) * radius; float z = sin(angle) * radius;
+    fill(145, 155, 170); vertex(x, 0, z);
+    fill(85, 95, 110); vertex(x, h, z);
+  }
+  endShape();
+  beginShape(TRIANGLE_FAN);
+  fill(155, 165, 180); vertex(0, 0, 0);
+  for (int i = 0; i <= sides; i++) {
+    float angle = TWO_PI * i / sides;
+    vertex(cos(angle) * radius, 0, sin(angle) * radius);
+  }
+  endShape();
+  beginShape(TRIANGLE_FAN);
+  fill(90, 100, 115); vertex(0, h, 0);
+  for (int i = 0; i <= sides; i++) {
+    float angle = TWO_PI * i / sides;
+    vertex(cos(angle) * radius, h, sin(angle) * radius);
+  }
+  endShape();
+}
+
+void drawNailTip(float radius, float pointLength) {
+  int sides = 48;
+  noStroke(); fill(110, 120, 135);
+  beginShape(TRIANGLE_FAN); vertex(0, pointLength, 0);
+  for (int i = 0; i <= sides; i++) {
+    float angle = TWO_PI * i / sides;
+    vertex(cos(angle) * radius, 0, sin(angle) * radius);
+  }
+  endShape();
+}
+
+void drawRingXZ(float cx, float cy, float diameter) { drawRingXZ(cx, cy, diameter, color(150, 160, 180)); }
+
+void drawRingXZ(float cx, float cy, float diameter, color c) {
+  pushMatrix(); translate(cx, cy, 0);
+  noFill(); stroke(c, 180); strokeWeight(1.5);
+  beginShape();
+  int sides = 64; float radius = diameter / 2.0;
+  for (int i = 0; i <= sides; i++) {
+    float angle = TWO_PI * i / sides;
+    vertex(cos(angle) * radius, 0, sin(angle) * radius);
+  }
+  endShape(); popMatrix();
+}
+
+void drawDiskXZ(float diameter, color c) {
+  float radius = diameter / 2.0;
+  noStroke(); fill(c);
+  beginShape(TRIANGLE_FAN); vertex(0, 0, 0);
+  int sides = 64;
+  for (int i = 0; i <= sides; i++) {
+    float angle = TWO_PI * i / sides;
+    vertex(cos(angle) * radius, 0, sin(angle) * radius);
+  }
+  endShape();
+}
+
+void ellipseXZ(float cx, float cz, float diameter) {
+  pushMatrix(); translate(cx, 0, cz);
+  noFill(); beginShape();
+  int sides = 36; float radius = diameter / 2.0;
+  for (int i = 0; i <= sides; i++) {
+    float angle = TWO_PI * i / float(sides);
+    vertex(cos(angle) * radius, 0, sin(angle) * radius);
+  }
+  endShape(CLOSE); popMatrix();
+}
+
+// ================================================================
+// SCREEN 1 - MAIN HUD RENDERING
+// ================================================================
+
+void drawMainHUD() {
+  hint(DISABLE_DEPTH_TEST);
+  camera();
+  
+  textAlign(CENTER, TOP);
+  textFont(boldFont);
+  textSize(27);
+  fill(255);
+  text("SOM UNIT III — FALLING WEIGHT IMPACT", width / 2, 18);
+  
+  fill(40, 130, 255); noStroke();
+  rect(viewDataBtnX, viewDataBtnY, viewDataBtnW, viewDataBtnH, 8);
+  fill(255); textAlign(CENTER, CENTER); textFont(regularFont); textSize(16);
+  text("VIEW DATA ➡", viewDataBtnX + viewDataBtnW / 2, viewDataBtnY + viewDataBtnH / 2);
+  
+  if (contactActive) drawDraggableImpactVector();
+  
+  drawStressSlider(); // STRESS INTENSITY & BLINK SLIDER
+  drawForceTimeGraph();
+  drawFallSlider();
+  drawImpactSlider();
+  drawButtons();
+  
+  hint(ENABLE_DEPTH_TEST);
+}
+
+void drawStressSlider() {
+  fill(panelColor); noStroke(); rectMode(CORNER);
+  rect(stressPanelX, stressPanelY, stressPanelW, stressPanelH, 16);
+  fill(150, 170, 190); textFont(regularFont); textSize(12); textAlign(RIGHT, TOP);
+  text("DRAG PANEL", stressPanelX + stressPanelW - 15, stressPanelY + 12);
+  
+  textAlign(CENTER, TOP); textFont(boldFont); textSize(15); 
+  fill(getSmoothHeatMap(0.3 * stressIntensity)); // Title color gets hotter too
+  text("COLOR STRESS & BLINK SCALER", stressPanelX + stressPanelW / 2, stressPanelY + 12);
+  
+  float sliderX = stressPanelX + 40, sliderY = stressPanelY + 60, sliderW = stressPanelW - 80;
+  stroke(75, 85, 105); strokeWeight(7); line(sliderX, sliderY, sliderX + sliderW, sliderY);
+  float knobX = map(stressIntensity, minStress, maxStress, sliderX, sliderX + sliderW);
+  stroke(getSmoothHeatMap(0.4 * stressIntensity)); strokeWeight(7); line(sliderX, sliderY, knobX, sliderY);
+  noStroke(); fill(hotWhite); ellipse(knobX, sliderY, 25, 25);
+  
+  fill(255); textFont(regularFont); textSize(13); textAlign(CENTER, BOTTOM);
+  text(nf(stressIntensity, 0, 1) + "x", knobX, sliderY - 16);
+  fill(170); textAlign(LEFT, CENTER); text(nf(minStress, 0, 1) + "x", sliderX, sliderY + 22);
+  textAlign(RIGHT, CENTER); text(nf(maxStress, 0, 1) + "x", sliderX + sliderW, sliderY + 22);
+}
+
+void drawDraggableImpactVector() {
+  float forceFraction = forceEnvelope(impactTimeMs);
+  if (forceFraction <= 0.001) return;
+
+  float blinkFrequency = 0.01 + 0.01 * stressIntensity;
+  float blink = 0.5 + 0.5 * sin(millis() * blinkFrequency);
+  float vectorLength = impactVectorMinimum + (impactVectorMaximum - impactVectorMinimum) * forceFraction;
+  color vectorColor = getSmoothHeatMap(forceFraction * stressIntensity);
+
+  pushMatrix();
+  translate(vectorScreenX, vectorScreenY);
+
+  if (vectorDetached) {
+    noFill(); stroke(255, 60); strokeWeight(1);
+    rectMode(CENTER); rect(0, vectorLength / 2.0, 90, vectorLength + 50, 8); rectMode(CORNER);
+    fill(255, 180); textFont(regularFont); textSize(13); textAlign(CENTER, BOTTOM);
+    text("IMPULSE VECTOR", 0, -20);
+  }
+
+  stroke(vectorColor, 45 + 100 * blink); strokeWeight(16 + 12 * forceFraction); line(0, 0, 0, vectorLength);
+  stroke(vectorColor, 130 + 125 * blink); strokeWeight(4 + 8 * forceFraction); line(0, 0, 0, vectorLength);
+  stroke(hotWhite, 245); strokeWeight(2 + 3 * forceFraction); line(0, 0, 0, vectorLength);
+
+  pushMatrix();
+  translate(0, vectorLength);
+  noStroke(); fill(vectorColor, 190 + 65 * blink);
+  triangle(-22, 0, 22, 0, 0, 34);
+  popMatrix();
+
+  noStroke(); fill(vectorColor, 180 + 75 * blink);
+  float circleSize = (7 + 12 * forceFraction) * 2;
+  ellipse(0, 0, circleSize, circleSize);
+  popMatrix();
+}
+
+void drawFallSlider() {
+  fill(panelColor); noStroke(); rectMode(CORNER);
+  rect(fallPanelX, fallPanelY, fallPanelW, fallPanelH, 16);
+  fill(150, 170, 190); textFont(regularFont); textSize(12); textAlign(RIGHT, TOP);
+  text("DRAG PANEL", fallPanelX + fallPanelW - 15, fallPanelY + 12);
+  textAlign(CENTER, TOP); textFont(boldFont); textSize(15); fill(uiYellow);
+  text("FALL SPEED", fallPanelX + fallPanelW / 2, fallPanelY + 12);
+  
+  float sliderX = fallPanelX + 40, sliderY = fallPanelY + 60, sliderW = fallPanelW - 80;
+  stroke(75, 85, 105); strokeWeight(7); line(sliderX, sliderY, sliderX + sliderW, sliderY);
+  float knobX = map(fallAnimationSpeed, minFallSpeed, maxFallSpeed, sliderX, sliderX + sliderW);
+  stroke(uiYellow); strokeWeight(7); line(sliderX, sliderY, knobX, sliderY);
+  noStroke(); fill(uiYellow); ellipse(knobX, sliderY, 25, 25);
+  fill(255); textFont(regularFont); textSize(13); textAlign(CENTER, BOTTOM);
+  text(nf(fallAnimationSpeed, 0, 2) + "x", knobX, sliderY - 16);
+  fill(170); textAlign(LEFT, CENTER); text("0.02x", sliderX, sliderY + 22);
+  textAlign(RIGHT, CENTER); text("1.00x", sliderX + sliderW, sliderY + 22);
+}
+
+void drawImpactSlider() {
+  fill(panelColor); noStroke(); rectMode(CORNER);
+  rect(impactPanelX, impactPanelY, impactPanelW, impactPanelH, 16);
+  fill(150, 170, 190); textFont(regularFont); textSize(12); textAlign(RIGHT, TOP);
+  text("DRAG PANEL", impactPanelX + impactPanelW - 15, impactPanelY + 12);
+  
+  float textSizeTitle = (impactPanelW < 450) ? 12 : 15;
+  textAlign(CENTER, TOP); textFont(boldFont); textSize(textSizeTitle); fill(getSmoothHeatMap(redPulse * stressIntensity));
+  text("IMPACT VECTOR SPEED — WATCH GROWTH / DECAY", impactPanelX + impactPanelW / 2, impactPanelY + 12);
+  
+  float sliderX = impactPanelX + 40, sliderY = impactPanelY + 60, sliderW = impactPanelW - 80;
+  stroke(75, 85, 105); strokeWeight(7); line(sliderX, sliderY, sliderX + sliderW, sliderY);
+  float knobX = map(impactAnimationSpeed, minImpactSpeed, maxImpactSpeed, sliderX, sliderX + sliderW);
+  stroke(getSmoothHeatMap(redPulse * stressIntensity)); strokeWeight(7); line(sliderX, sliderY, knobX, sliderY);
+  noStroke(); fill(getSmoothHeatMap(redPulse * stressIntensity)); ellipse(knobX, sliderY, 25, 25);
+  fill(255); textFont(regularFont); textSize(13); textAlign(CENTER, BOTTOM);
+  text(nf(impactAnimationSpeed, 0, 3) + "x", knobX, sliderY - 16);
+  fill(170); textAlign(LEFT, CENTER); text("0.001x", sliderX, sliderY + 22);
+  textAlign(RIGHT, CENTER); text("1.00x", sliderX + sliderW, sliderY + 22);
+}
+
+void drawForceTimeGraph() {
+  fill(panelColor); noStroke(); rectMode(CORNER);
+  rect(graphX, graphY, graphW, graphH, 16);
+  fill(uiRed); textAlign(LEFT, TOP); textFont(boldFont); textSize(19);
+  text("IMPULSIVE FORCE — F(t)", graphX + 18, graphY + 16);
+  fill(150, 170, 190); textFont(regularFont); textSize(12); textAlign(RIGHT, TOP);
+  text("DRAG PANEL", graphX + graphW - 15, graphY + 18);
+  
+  int px = int(graphX) + 45, py = int(graphY) + 55, pw = int(graphW) - 75, ph = int(graphH) - 90;
+  stroke(120, 135, 155); strokeWeight(1.5);
+  line(px, py + ph, px + pw, py + ph); line(px, py, px, py + ph);
+  
+  stroke(50, 65, 80);
+  for (int i = 1; i < 5; i++) { float xx = px + pw * i / 5.0; line(xx, py, xx, py + ph); }
+  for (int i = 1; i < 4; i++) { float yy = py + ph * i / 4.0; line(px, yy, px + pw, yy); }
+  
+  noFill(); stroke(uiRed); strokeWeight(4); beginShape();
+  int samples = 160;
+  for (int i = 0; i <= samples; i++) {
+    float t = pulseEndMs * i / float(samples);
+    float value = forceEnvelope(t);
+    float xx = px + map(t, 0, pulseEndMs, 0, pw);
+    float yy = py + ph - value * ph;
+    vertex(xx, yy);
+  }
+  endShape();
+  
+  stroke(uiYellow, 220); strokeWeight(2); line(px, py + ph - 4, px + pw, py + ph - 4);
+  float peakX = px + map(peakTimeMs, 0, pulseEndMs, 0, pw);
+  stroke(uiYellow, 160); strokeWeight(1.5); line(peakX, py, peakX, py + ph);
+  
+  if (contactActive) {
+    float currentForce = forceEnvelope(impactTimeMs);
+    float cursorX = px + map(impactTimeMs, 0, pulseEndMs, 0, pw);
+    float currentY = py + ph - currentForce * ph;
+    
+    // Graph cursor color also scales with the stress multiplier
+    color cursorColor = getSmoothHeatMap(currentForce * stressIntensity);
+    stroke(cursorColor); strokeWeight(2); line(cursorX, py, cursorX, py + ph);
+    noStroke(); fill(cursorColor); ellipse(cursorX, currentY, 13, 13);
+    
+    float blinkFrequency = 0.01 + 0.01 * stressIntensity;
+    float blink = 0.5 + 0.5 * sin(millis() * blinkFrequency);
+    fill(hotWhite, 170 + 85 * blink); ellipse(cursorX, currentY, 9 + 7 * blink, 9 + 7 * blink);
+  }
+  
+  fill(200); textFont(regularFont); textSize(14); textAlign(CENTER, TOP);
+  text("0 ms", px, py + ph + 10); text("3 ms", px + pw / 2, py + ph + 10); text("6 ms", px + pw, py + ph + 10);
+  fill(uiYellow); textAlign(LEFT, TOP);
+  text("PEAK = " + nf(peakTimeMs, 0, 1) + " ms", peakX + 5, py + 5);
+  fill(uiRed);
+  text("FMAX = " + nf(FMAX / 1000.0, 0, 2) + " kN", graphX + 18, graphY + graphH - 28);
+}
+
+void drawButtons() {
+  dropBtnW = 230; dropBtnH = 55; resetBtnW = 200; resetBtnH = 55;
+  if (width > dropBtnW + resetBtnW + 40) {
+    dropBtnX = width / 2 - dropBtnW - 10; dropBtnY = height - 75;
+    resetBtnX = width / 2 + 10; resetBtnY = height - 75;
+  } else {
+    dropBtnX = width / 2 - dropBtnW / 2; dropBtnY = height - 140;
+    resetBtnX = width / 2 - resetBtnW / 2; resetBtnY = height - 75;
+  }
+  
+  fill(state == READY || state == SETTLED ? color(20, 190, 90) : color(100));
+  noStroke(); rect(dropBtnX, dropBtnY, dropBtnW, dropBtnH, 12);
+  fill(255); textAlign(CENTER, CENTER); textFont(boldFont); textSize(19);
+  text(state == SETTLED ? "DROP AGAIN" : "DROP WEIGHT", dropBtnX + dropBtnW / 2, dropBtnY + dropBtnH / 2);
+  
+  fill(155, 55, 55); rect(resetBtnX, resetBtnY, resetBtnW, resetBtnH, 12);
+  fill(255); text("RESET ALL", resetBtnX + resetBtnW / 2, resetBtnY + resetBtnH / 2);
+}
+
+// ================================================================
+// SCREEN 2 - DEDICATED DATA PANEL
+// ================================================================
+
+void drawDataScreen() {
+  hint(DISABLE_DEPTH_TEST);
+  camera();
+  background(8, 12, 20); 
+  
+  fill(55, 65, 80); noStroke();
+  rect(backBtnX, backBtnY, backBtnW, backBtnH, 8);
+  fill(255); textAlign(CENTER, CENTER); textFont(regularFont); textSize(16);
+  text("◀ BACK", backBtnX + backBtnW / 2, backBtnY + backBtnH / 2);
+  
+  textAlign(CENTER, TOP); textFont(boldFont); textSize(30); fill(255);
+  text("ENGINEERING DATA & CALCULATIONS", width / 2, 22);
+  
+  boolean twoCols = width > 700;
+  float col1X = width * 0.1;
+  float col2X = twoCols ? width * 0.55 : width * 0.1;
+  float startY = 120;
+  float rowSpacing = 35;
+  
+  textAlign(LEFT, TOP); textFont(regularFont); textSize(18);
+  
+  float y1 = startY;
+  
+  fill(uiCyan); text("PHYSICAL PARAMETERS", col1X, y1); y1 += 40;
+  fill(235);
+  text("Applied Weight (P)  =  " + nf(P, 0, 1) + " N", col1X, y1); y1 += rowSpacing;
+  text("Drop Height (H)     =  " + nf(H, 0, 0) + " mm", col1X, y1); y1 += rowSpacing;
+  text("Nail Length (L)     =  " + nf(L, 0, 0) + " mm", col1X, y1); y1 += rowSpacing;
+  text("Diameter (d)        =  " + nf(D, 0, 1) + " mm", col1X, y1); y1 += rowSpacing;
+  text("Area (A)            =  " + nf(A, 0, 2) + " mm2", col1X, y1); y1 += rowSpacing;
+  text("Modulus (E)         =  " + nf(E, 0, 0) + " N/mm2", col1X, y1); y1 += rowSpacing + 15;
+  
+  fill(uiOrange); text("CONTACT / RESTITUTION", col1X, y1); y1 += 40;
+  fill(235);
+  text("Restitution (e)     =  " + nf(restitutionCoefficient, 0, 2), col1X, y1); y1 += rowSpacing;
+  text("Velocity Before     =  " + nf(velocityBeforeImpact, 0, 1) + " mm/s", col1X, y1); y1 += rowSpacing;
+  text("Velocity After      =  " + nf(velocityAfterImpact, 0, 1) + " mm/s", col1X, y1); y1 += rowSpacing;
+  fill(uiGreen); text("STATUS: NO REBOUND", col1X, y1); y1 += rowSpacing + 15;
+  
+  float y2 = twoCols ? startY : y1;
+  
+  fill(uiCyan); text("IMPACT CALCULATION", col2X, y2); y2 += 40;
+  fill(235);
+  text("Impact Velocity     =  " + nf(impactVelocity, 0, 1) + " mm/s", col2X, y2); y2 += rowSpacing;
+  text("Static Stress       =  " + nf(staticStress, 0, 3) + " N/mm2", col2X, y2); y2 += rowSpacing;
+  text("Static Extension    =  " + nf(staticExtension, 0, 4) + " mm", col2X, y2); y2 += rowSpacing;
+  text("Impact Factor       =  " + nf(impactFactor, 0, 2), col2X, y2); y2 += rowSpacing;
+  fill(uiRed); text("MAX STRESS (sigma)  =  " + nf(sigmaMax, 0, 2) + " N/mm2", col2X, y2); y2 += rowSpacing;
+  text("MAX FORCE (F)       =  " + nf(FMAX / 1000.0, 0, 2) + " kN", col2X, y2); y2 += rowSpacing + 15;
+  
+  fill(uiOrange); text("LIVE IMPACT DATA", col2X, y2); y2 += 40;
+  fill(255);
+  text("Impact Time         =  " + nf(impactTimeMs, 0, 3) + " ms", col2X, y2); y2 += rowSpacing;
+  text("Force Envelope      =  " + nf(redPulse * 100, 0, 1) + " %", col2X, y2); y2 += rowSpacing;
+  text("Current Fall Speed  =  " + nf(fallAnimationSpeed, 0, 2) + "x", col2X, y2); y2 += rowSpacing;
+  text("Color Multiplier    =  " + nf(stressIntensity, 0, 1) + "x", col2X, y2); y2 += rowSpacing;
+  
+  if (state == FALLING) { fill(uiYellow); text("STATUS: FREE FALL - VELOCITY", col2X, y2); } 
+  else if (state == IMPACT) { fill(uiRed); text("STATUS: IMPACT COMPRESSION", col2X, y2); } 
+  else { fill(uiGreen); text("STATUS: " + getStateText(), col2X, y2); }
+  
+  hint(ENABLE_DEPTH_TEST);
+}
+
+// ================================================================
+// SYSTEM LOGIC & HIT TESTS
+// ================================================================
+
+String getStateText() {
+  if (state == READY) return "READY";
+  if (state == FALLING) return "FREE FALL";
+  if (state == IMPACT) return "IMPACT";
+  if (state == WAVE) return "STRESS WAVE";
+  return "SETTLED";
+}
+
+void startDrop() {
+  calculateContactGeometry(); calculatePhysics();
+  state = FALLING; weightY = 0.0; weightVelocity = 0.0; impactTimeMs = 0.0;
+  waveDistance = 0.0; redPulse = 0.0; totalPenetration = 0.0; contactSweepX = -nailHeadRadius;
+  contactActive = false; velocityBeforeImpact = impactVelocity; velocityAfterImpact = 0.0;
+}
+
+boolean isInsideDropButton(float px, float py) { return (px >= dropBtnX && px <= dropBtnX + dropBtnW && py >= dropBtnY && py <= dropBtnY + dropBtnH); }
+boolean isInsideResetButton(float px, float py) { return (px >= resetBtnX && px <= resetBtnX + resetBtnW && py >= resetBtnY && py <= resetBtnY + resetBtnH); }
+boolean isInsideGraph(float px, float py) { return (px >= graphX && px <= graphX + graphW && py >= graphY && py <= graphY + graphH); }
+boolean isInsideFallPanel(float px, float py) { return (px >= fallPanelX && px <= fallPanelX + fallPanelW && py >= fallPanelY && py <= fallPanelY + fallPanelH); }
+boolean isInsideImpactPanel(float px, float py) { return (px >= impactPanelX && px <= impactPanelX + impactPanelW && py >= impactPanelY && py <= impactPanelY + impactPanelH); }
+boolean isInsideStressPanel(float px, float py) { return (px >= stressPanelX && px <= stressPanelX + stressPanelW && py >= stressPanelY && py <= stressPanelY + stressPanelH); }
+
+boolean isInsideStressSlider(float px, float py) {
+  float sliderX = stressPanelX + 40, sliderY = stressPanelY + 60, sliderW = stressPanelW - 80;
+  return (px >= sliderX - 20 && px <= sliderX + sliderW + 20 && py >= sliderY - 30 && py <= sliderY + 30);
+}
+
+boolean isInsideFallSlider(float px, float py) {
+  float sliderX = fallPanelX + 40, sliderY = fallPanelY + 60, sliderW = fallPanelW - 80;
+  return (px >= sliderX - 20 && px <= sliderX + sliderW + 20 && py >= sliderY - 30 && py <= sliderY + 30);
+}
+
+boolean isInsideImpactSlider(float px, float py) {
+  float sliderX = impactPanelX + 40, sliderY = impactPanelY + 60, sliderW = impactPanelW - 80;
+  return (px >= sliderX - 20 && px <= sliderX + sliderW + 20 && py >= sliderY - 30 && py <= sliderY + 30);
+}
+
+boolean isInsideVector(float px, float py) {
+  if (!contactActive) return false;
+  float forceFraction = forceEnvelope(impactTimeMs);
+  if (forceFraction <= 0.001) return false;
+  
+  float vectorLength = impactVectorMinimum + (impactVectorMaximum - impactVectorMinimum) * forceFraction;
+  float left = vectorScreenX - 45; float right = vectorScreenX + 45;
+  float top = vectorScreenY - 25; float bottom = vectorScreenY + vectorLength + 45;
+  
+  return (px >= left && px <= right && py >= top && py <= bottom);
+}
+
+// ================================================================
+// MOUSE INTERACTION
+// ================================================================
+
+void mousePressed() {
+  if (viewDataScreen) {
+    if (mouseX >= backBtnX && mouseX <= backBtnX + backBtnW && mouseY >= backBtnY && mouseY <= backBtnY + backBtnH) {
+      viewDataScreen = false;
+    }
+    return; 
+  }
+  
+  if (mouseX >= viewDataBtnX && mouseX <= viewDataBtnX + viewDataBtnW && mouseY >= viewDataBtnY && mouseY <= viewDataBtnY + viewDataBtnH) {
+    viewDataScreen = true;
+    return;
+  }
+  
+  if (isInsideDropButton(mouseX, mouseY)) { if (state == READY || state == SETTLED) startDrop(); return; }
+  if (isInsideResetButton(mouseX, mouseY)) { resetSimulation(); return; }
+  
+  if (isInsideStressSlider(mouseX, mouseY)) { stressSliderDragging = true; updateStressFromMouse(); return; }
+  if (isInsideFallSlider(mouseX, mouseY)) { fallSliderDragging = true; updateFallSpeedFromMouse(); return; }
+  if (isInsideImpactSlider(mouseX, mouseY)) { impactSliderDragging = true; updateImpactSpeedFromMouse(); return; }
+  
+  if (isInsideVector(mouseX, mouseY)) {
+    vectorDragging = true; vectorDetached = true;
+    vectorDragOffsetX = mouseX - vectorScreenX; vectorDragOffsetY = mouseY - vectorScreenY;
+    return;
+  }
+  
+  if (isInsideStressPanel(mouseX, mouseY)) { stressPanelDragging = true; stressDragOffsetX = mouseX - stressPanelX; stressDragOffsetY = mouseY - stressPanelY; return; }
+  if (isInsideFallPanel(mouseX, mouseY)) { fallPanelDragging = true; fallDragOffsetX = mouseX - fallPanelX; fallDragOffsetY = mouseY - fallPanelY; return; }
+  if (isInsideImpactPanel(mouseX, mouseY)) { impactPanelDragging = true; impactDragOffsetX = mouseX - impactPanelX; impactDragOffsetY = mouseY - impactPanelY; return; }
+  if (isInsideGraph(mouseX, mouseY)) { graphDragging = true; graphDragOffsetX = mouseX - graphX; graphDragOffsetY = mouseY - graphY; return; }
+  
+  cameraDragging = true; lastMouseX = mouseX; lastMouseY = mouseY;
+}
+
+void updateStressFromMouse() {
+  float sliderX = stressPanelX + 40, sliderW = stressPanelW - 80;
+  stressIntensity = constrain(map(mouseX, sliderX, sliderX + sliderW, minStress, maxStress), minStress, maxStress);
+}
+
+void updateFallSpeedFromMouse() {
+  float sliderX = fallPanelX + 40, sliderW = fallPanelW - 80;
+  fallAnimationSpeed = constrain(map(mouseX, sliderX, sliderX + sliderW, minFallSpeed, maxFallSpeed), minFallSpeed, maxFallSpeed);
+}
+
+void updateImpactSpeedFromMouse() {
+  float sliderX = impactPanelX + 40, sliderW = impactPanelW - 80;
+  impactAnimationSpeed = constrain(map(mouseX, sliderX, sliderX + sliderW, minImpactSpeed, maxImpactSpeed), minImpactSpeed, maxImpactSpeed);
+}
+
+void mouseDragged() {
+  if (viewDataScreen) return; 
+  
+  if (stressSliderDragging) { updateStressFromMouse(); return; }
+  if (fallSliderDragging) { updateFallSpeedFromMouse(); return; }
+  if (impactSliderDragging) { updateImpactSpeedFromMouse(); return; }
+  
+  if (vectorDragging) { vectorScreenX = mouseX - vectorDragOffsetX; vectorScreenY = mouseY - vectorDragOffsetY; return; }
+  
+  if (stressPanelDragging) { stressPanelX = mouseX - stressDragOffsetX; stressPanelY = mouseY - stressDragOffsetY; constrainPanels(); return; }
+  if (fallPanelDragging) { fallPanelX = mouseX - fallDragOffsetX; fallPanelY = mouseY - fallDragOffsetY; constrainPanels(); return; }
+  if (impactPanelDragging) { impactPanelX = mouseX - impactDragOffsetX; impactPanelY = mouseY - impactDragOffsetY; constrainPanels(); return; }
+  if (graphDragging) { graphX = mouseX - graphDragOffsetX; graphY = mouseY - graphDragOffsetY; constrainPanels(); return; }
+  
+  if (cameraDragging) {
+    float dx = mouseX - lastMouseX; float dy = mouseY - lastMouseY;
+    rotY += dx * 0.01; rotX += dy * 0.01; rotX = constrain(rotX, -PI / 2.2, PI / 2.2);
+    lastMouseX = mouseX; lastMouseY = mouseY;
+  }
+}
+
+void mouseReleased() {
+  stressSliderDragging = false; stressPanelDragging = false;
+  fallSliderDragging = false; fallPanelDragging = false;
+  impactSliderDragging = false; impactPanelDragging = false;
+  graphDragging = false; vectorDragging = false; cameraDragging = false;
+}
+
+// ================================================================
+// TOUCH & KEYBOARD
+// ================================================================
+
+void touchStarted() { mousePressed(); }
+void touchMoved() { mouseDragged(); }
+void touchEnded() { mouseReleased(); }
+void mouseWheel(float amount) { if(!viewDataScreen){ zoom *= 1.0 - amount * 0.05; zoom = constrain(zoom, 0.55, 2.5); } }
+
+void keyPressed() {
+  if (key == 'r' || key == 'R') resetSimulation();
+  if (key == 'd' || key == 'D') if (state == READY || state == SETTLED) startDrop();
+  if (key == '1') impactAnimationSpeed = 0.001;
+  if (key == '2') impactAnimationSpeed = 0.050;
+  if (key == '3') impactAnimationSpeed = 0.100;
+  if (key == '4') impactAnimationSpeed = 0.250;
+  if (key == '5') impactAnimationSpeed = 1.000;
+}
