@@ -1,0 +1,540 @@
+// INTERNAL STRESS 3D VISUALIZER - ULTIMATE PRO VERSION
+// Fully APDE compatible Processing Android code
+// Includes Tensile vs Compressive, Sign Conventions, Colors, and Failure Inequality
+
+int state = 0; 
+// 0: Tensile External Forces
+// 1: Tensile Cut Plane
+// 2: Tensile Equilibrium (1 Vector)
+// 3: Tensile Stress Subdivision (Cyan Vectors)
+// 4: Normal Stress Formula
+// 5: Failure Inequality (Yield Stress)
+// 6: Compressive External Forces (Green inward)
+// 7: Compressive Cut Plane
+// 8: Compressive Equilibrium (1 Vector)
+// 9: Compressive Stress Subdivision (Red Vectors)
+// 10: Sign Convention (+/-)
+
+float rotX = 0, rotY = 0;
+float rodLength = 400;
+float rodRadius = 50;
+
+Slider cutSlider;
+Slider vecSlider;
+Button nextButton;
+Button prevButton;
+
+ToggleButton btnToggleLeft;
+ToggleButton btnToggleRight;
+ToggleButton btnSumLeft;
+ToggleButton btnSumRight;
+
+boolean draggingUI = false;
+
+void setup() {
+  size(displayWidth, displayHeight, P3D);
+  orientation(LANDSCAPE);
+  smooth(4);
+  
+  // Initialize UI Elements (Sliders & Navigation)
+  cutSlider = new Slider("Cut Section Position", 50, height - 150, 300, 40, -rodLength/2.2, rodLength/2.2, 0);
+  vecSlider = new Slider("Subdivide Vectors", 50, height - 80, 300, 40, 1, 50, 15);
+  
+  nextButton = new Button("Next", width - 150, height - 100, 100, 60);
+  prevButton = new Button("Prev", width - 270, height - 100, 100, 60);
+  
+  // Initialize Toggle & Sum Buttons
+  btnToggleLeft = new ToggleButton("Vis: Left Side", 20, 20, 160, 50, true);
+  btnToggleRight = new ToggleButton("Vis: Right Side", width - 180, 20, 160, 50, true);
+  
+  btnSumLeft = new ToggleButton("Sum to One", 20, 80, 160, 50, false);
+  btnSumRight = new ToggleButton("Sum to One", width - 180, 80, 160, 50, false);
+}
+
+void draw() {
+  background(15, 25, 35); // Dark blueish-gray background
+  
+  // Define State-Based Physics Logic
+  boolean isCompressive = (state >= 6);
+  boolean isCut = (state >= 1 && state <= 5) || (state >= 7);
+  boolean isSplit = ((state >= 2 && state <= 5) || state >= 8);
+  boolean isSubdivided = ((state >= 3 && state <= 5) || state >= 9);
+  
+  color eqColor = color(255, 255, 0); // Yellow for single equilibrium vector
+  color tensileColor = color(0, 200, 255); // Cyan for tensile stress
+  color compColor = color(255, 80, 50); // Red/Orange for compressive stress
+  
+  // ----- 3D SCENE DRAWING -----
+  pushMatrix();
+  translate(width / 2, height / 2 - 20, 0);
+  
+  // Apply rotation from drag
+  rotateX(rotX);
+  rotateY(rotY);
+  
+  // Lighting for metallic shiny look
+  ambientLight(80, 80, 80);
+  lightSpecular(255, 255, 255);
+  directionalLight(200, 200, 200, 0, 0, -1);
+  directionalLight(150, 150, 180, 1, 1, 0);
+  specular(255, 255, 255);
+  shininess(30.0);
+  
+  float cutZ = cutSlider.val;
+  float gap = isSplit ? 100 : 0; // Separation gap for cut view
+  
+  // ----- DRAW LEFT PIECE -----
+  if (btnToggleLeft.isOn) {
+    pushMatrix();
+    translate(0, 0, -gap/2);
+    
+    // Draw Rod
+    drawRodSegment(-rodLength/2, cutZ, true, isCut);
+    
+    // External Left Force (Green)
+    pushMatrix();
+    if (isCompressive) {
+      translate(0, 0, -rodLength/2 - 120); // Move outward so it pushes against the face
+      // Compressive pushes INWARD (right, +Z) -> No rotation needed
+    } else {
+      translate(0, 0, -rodLength/2); 
+      rotateY(PI); // Tensile pulls OUTWARD (left, -Z)
+    }
+    drawArrow(120, 15, color(0, 255, 100)); 
+    popMatrix();
+    
+    // Internal Left Force (At the cut face)
+    if (isSplit) {
+      pushMatrix();
+      translate(0, 0, cutZ);
+      
+      if (isCompressive) {
+        translate(0, 0, 80); // Move into the gap so arrows push AGAINST the face
+        rotateY(PI); // Compressive must push left (-Z) to resist being crushed.
+      }
+      // Tensile naturally extends into the gap (+Z) pulling right. No rotation needed.
+      
+      int vCount = isSubdivided ? (int)vecSlider.val : 1;
+      if (isSubdivided && btnSumLeft.isOn && (millis() % 800 > 400)) vCount = 1; 
+      
+      color vColor = (vCount == 1 && !isSubdivided) ? eqColor : (isCompressive ? compColor : tensileColor);
+      drawVectorBundle(80, vCount, vColor); 
+      popMatrix();
+    }
+    popMatrix();
+  }
+  
+  // ----- DRAW RIGHT PIECE -----
+  if (btnToggleRight.isOn) {
+    pushMatrix();
+    translate(0, 0, gap/2);
+    
+    // Draw Rod
+    drawRodSegment(cutZ, rodLength/2, isCut, true);
+    
+    // External Right Force (Green)
+    pushMatrix();
+    if (isCompressive) {
+      translate(0, 0, rodLength/2 + 120); // Move outward so it pushes against the face
+      rotateY(PI); // Compressive pushes INWARD (left, -Z)
+    } else {
+      translate(0, 0, rodLength/2);
+      // Tensile pulls OUTWARD (right, +Z) -> No rotation needed
+    }
+    drawArrow(120, 15, color(0, 255, 100));
+    popMatrix();
+    
+    // Internal Right Force (At the cut face)
+    if (isSplit) {
+      pushMatrix();
+      translate(0, 0, cutZ);
+      
+      if (isCompressive) {
+        translate(0, 0, -80); // Move into the gap so arrows push AGAINST the face
+        // Compressive must push right (+Z) to resist being crushed. No rotation.
+      } else {
+        rotateY(PI); // Tensile must pull left (-Z) to hold material together. Rotate PI.
+      }
+      
+      int vCount = isSubdivided ? (int)vecSlider.val : 1;
+      if (isSubdivided && btnSumRight.isOn && (millis() % 800 > 400)) vCount = 1; 
+      
+      color vColor = (vCount == 1 && !isSubdivided) ? eqColor : (isCompressive ? compColor : tensileColor);
+      drawVectorBundle(80, vCount, vColor);
+      popMatrix();
+    }
+    popMatrix();
+  }
+  
+  // Draw Cut Plane (Laser Cut)
+  if (state == 1 || state == 7) {
+    pushMatrix();
+    translate(0, 0, cutZ);
+    noStroke();
+    fill(255, 50, 0, 150); // Semi-transparent red plane
+    rectMode(CENTER);
+    rect(0, 0, rodRadius * 4, rodRadius * 4);
+    popMatrix();
+  }
+  
+  popMatrix(); // End 3D scene
+  
+  
+  // ----- 2D UI OVERLAY -----
+  camera(); 
+  hint(DISABLE_DEPTH_TEST);
+  noLights();
+  
+  drawTextOverlay();
+  
+  // UI Visibility Logic
+  if (isCut) cutSlider.display();
+  if (isSubdivided) vecSlider.display();
+  
+  nextButton.display();
+  prevButton.display();
+  
+  if (isCut) {
+    btnToggleLeft.display();
+    btnToggleRight.display();
+  }
+  
+  if (isSubdivided) {
+    if (btnToggleLeft.isOn) btnSumLeft.display();
+    if (btnToggleRight.isOn) btnSumRight.display();
+  }
+  
+  hint(ENABLE_DEPTH_TEST);
+}
+
+
+// ----- TEXT EXPLANATIONS (SCREENS) -----
+void drawTextOverlay() {
+  fill(255);
+  textAlign(CENTER, TOP);
+  textSize(30);
+  
+  String title = "";
+  String desc = "";
+  
+  switch(state) {
+    case 0:
+      title = "Tensile External Forces";
+      desc = "A metallic rod is subjected to pulling forces (Green) at both ends.\nDrag screen to rotate the 3D view.";
+      break;
+    case 1:
+      title = "The Section Plane";
+      desc = "Imagine a laser cutting a section. Use top buttons to hide a side\nand see inside. Use the slider to move the cut.";
+      break;
+    case 2:
+      title = "Internal Equilibrium (Tension)";
+      desc = "To prevent breaking, internal forces (Yellow) equal the external forces.\nNotice they point OPPOSITE to the green external vectors.";
+      break;
+    case 3:
+      title = "Subdividing Force into Stress";
+      desc = "The force is distributed across the circular area into Tensile Stress (Cyan).\nSlide to subdivide, or use the 'Sum' buttons to combine them.";
+      break;
+    case 4:
+      title = "Normal Stress Equation";
+      desc = "STRESS (σ) = FORCE (F) / AREA (A)\nBecause the internal forces act perpendicular (normal) to the cut face,\nthis is called Normal Stress.";
+      break;
+    case 5:
+      title = "Failure Inequality";
+      desc = "Yield Stress (σ_y) is the material's maximum limit.\nFailure occurs when:  σ > σ_y\nThe maximum safe applied force is calculated as: F = σ_y × A";
+      break;
+    case 6:
+      title = "Compressive External Forces";
+      desc = "What happens if we reverse the external loads?\nNow the green forces are PUSHING inward on the rod.\nThis creates Compressive Stress.";
+      break;
+    case 7:
+      title = "Compressive Section Plane";
+      desc = "Once again, let's look at the internal cross-section.\nNotice how the external forces are pushing inward on the boundaries.";
+      break;
+    case 8:
+      title = "Compressive Internal Equilibrium";
+      desc = "To resist being crushed, the internal material pushes BACK outward.\nNotice the single yellow vector points toward the ends now.";
+      break;
+    case 9:
+      title = "Compressive Stress Subdivision";
+      desc = "The internal compressive force is distributed across the area.\nThese are Compressive Stresses, represented by Red vectors.";
+      break;
+    case 10:
+      title = "Engineering Sign Convention";
+      desc = "Engineers use a standard mathematical sign convention:\nTensile Stresses (pulling apart) are designated as POSITIVE (+)\nCompressive Stresses (pushing together) are NEGATIVE (-)";
+      break;
+  }
+  
+  text(title, width/2, 15);
+  textSize(20);
+  fill(200);
+  text(desc, width/2, 60);
+}
+
+
+// ----- 3D GEOMETRY FUNCTIONS -----
+
+void drawRodSegment(float zStart, float zEnd, boolean capStart, boolean capEnd) {
+  float h = zEnd - zStart;
+  pushMatrix();
+  translate(0, 0, zStart + h/2);
+  
+  noStroke();
+  fill(200, 210, 220); 
+  
+  int sides = 36;
+  float angle = 0;
+  float angleStep = TWO_PI / sides;
+  
+  beginShape(QUAD_STRIP);
+  for (int i = 0; i <= sides; i++) {
+    float x = cos(angle) * rodRadius;
+    float y = sin(angle) * rodRadius;
+    normal(x, y, 0); 
+    vertex(x, y, -h/2);
+    vertex(x, y, h/2);
+    angle += angleStep;
+  }
+  endShape();
+  
+  if (capStart) drawCap(-h/2, true);
+  if (capEnd) drawCap(h/2, false);
+  
+  popMatrix();
+}
+
+void drawCap(float z, boolean reverseNormal) {
+  int sides = 36;
+  float angle = 0;
+  float angleStep = TWO_PI / sides;
+  
+  fill(220, 220, 180, 255); // Solid yellowish cap face
+  beginShape(TRIANGLE_FAN);
+  normal(0, 0, reverseNormal ? -1 : 1);
+  vertex(0, 0, z); 
+  for (int i = 0; i <= sides; i++) {
+    float x = cos(angle) * rodRadius;
+    float y = sin(angle) * rodRadius;
+    vertex(x, y, z);
+    angle += (reverseNormal ? -angleStep : angleStep);
+  }
+  endShape();
+}
+
+void drawArrow(float len, float r, color c) {
+  fill(c);
+  noStroke();
+  
+  float shaftLen = len * 0.7;
+  pushMatrix();
+  translate(0, 0, shaftLen/2);
+  drawCylinder(r * 0.4, shaftLen, 12);
+  popMatrix();
+  
+  pushMatrix();
+  translate(0, 0, shaftLen);
+  drawCone(r, len - shaftLen, 12);
+  popMatrix();
+}
+
+void drawVectorBundle(float length, int count, color c) {
+  if (count == 1) {
+    drawArrow(length, 15, c); // Draw one big, thick vector
+    return;
+  }
+  
+  float r = map(count, 1, 50, 12, 3);
+  float goldenAngle = 2.39996; // Phyllotaxis pattern for perfect circle packing
+  
+  for (int i = 0; i < count; i++) {
+    float rad = rodRadius * 0.8 * sqrt((float)(i + 0.5) / count); 
+    float theta = i * goldenAngle;
+    
+    float vx = rad * cos(theta);
+    float vy = rad * sin(theta);
+    
+    pushMatrix();
+    translate(vx, vy, 0);
+    drawArrow(length, r, c);
+    popMatrix();
+  }
+}
+
+void drawCylinder(float r, float h, int sides) {
+  float angle = 0;
+  float angleStep = TWO_PI / sides;
+  beginShape(QUAD_STRIP);
+  for (int i = 0; i <= sides; i++) {
+    float x = cos(angle) * r;
+    float y = sin(angle) * r;
+    vertex(x, y, -h/2);
+    vertex(x, y, h/2);
+    angle += angleStep;
+  }
+  endShape();
+}
+
+void drawCone(float r, float h, int sides) {
+  float angle = 0;
+  float angleStep = TWO_PI / sides;
+  beginShape(TRIANGLE_FAN);
+  vertex(0, 0, h); 
+  for (int i = 0; i <= sides; i++) {
+    float x = cos(angle) * r;
+    float y = sin(angle) * r;
+    vertex(x, y, 0);
+    angle += angleStep;
+  }
+  endShape();
+}
+
+
+// ----- INTERACTION & EVENT HANDLING -----
+
+void mousePressed() {
+  draggingUI = false;
+  boolean isCut = (state >= 1 && state <= 5) || (state >= 7);
+  boolean isSubdivided = ((state >= 3 && state <= 5) || state >= 9);
+  
+  if (isCut && cutSlider.isHit(mouseX, mouseY)) {
+    cutSlider.dragging = true; draggingUI = true;
+  }
+  if (isSubdivided && vecSlider.isHit(mouseX, mouseY)) {
+    vecSlider.dragging = true; draggingUI = true;
+  }
+}
+
+void mouseDragged() {
+  if (cutSlider.dragging) {
+    cutSlider.update(mouseX);
+  } else if (vecSlider.dragging) {
+    vecSlider.update(mouseX);
+  } else if (!draggingUI) {
+    rotY += (mouseX - pmouseX) * 0.01;
+    rotX -= (mouseY - pmouseY) * 0.01;
+  }
+}
+
+void mouseReleased() {
+  cutSlider.dragging = false;
+  vecSlider.dragging = false;
+  
+  boolean isCut = (state >= 1 && state <= 5) || (state >= 7);
+  boolean isSubdivided = ((state >= 3 && state <= 5) || state >= 9);
+  
+  // Navigation (States 0 to 10)
+  if (nextButton.isHit(mouseX, mouseY)) { if (state < 10) state++; }
+  if (prevButton.isHit(mouseX, mouseY)) { if (state > 0) state--; }
+  
+  // Toggle Hits
+  if (isCut) {
+    if (btnToggleLeft.isHit(mouseX, mouseY)) btnToggleLeft.toggle();
+    if (btnToggleRight.isHit(mouseX, mouseY)) btnToggleRight.toggle();
+  }
+  
+  // Sum Hits
+  if (isSubdivided) {
+    if (btnToggleLeft.isOn && btnSumLeft.isHit(mouseX, mouseY)) btnSumLeft.toggle();
+    if (btnToggleRight.isOn && btnSumRight.isHit(mouseX, mouseY)) btnSumRight.toggle();
+  }
+}
+
+
+// ----- UI CLASSES -----
+
+class ToggleButton {
+  String label;
+  float x, y, w, h;
+  boolean isOn;
+  
+  ToggleButton(String _label, float _x, float _y, float _w, float _h, boolean _defaultState) {
+    label = _label; x = _x; y = _y; w = _w; h = _h; isOn = _defaultState;
+  }
+  
+  void display() {
+    if (isOn) fill(40, 180, 80); // Active Green
+    else fill(180, 60, 60);      // Inactive Red
+    
+    stroke(255);
+    strokeWeight(2);
+    rectMode(CORNER);
+    rect(x, y, w, h, 8);
+    
+    fill(255);
+    textAlign(CENTER, CENTER);
+    textSize(18);
+    text(label, x + w/2, y + h/2);
+    strokeWeight(1); // reset
+  }
+  
+  boolean isHit(float mx, float my) {
+    return (mx >= x && mx <= x + w && my >= y && my <= y + h);
+  }
+  
+  void toggle() {
+    isOn = !isOn;
+  }
+}
+
+class Slider {
+  String label;
+  float x, y, w, h;
+  float minVal, maxVal, val;
+  boolean dragging = false;
+  
+  Slider(String _label, float _x, float _y, float _w, float _h, float _min, float _max, float _startVal) {
+    label = _label; x = _x; y = _y; w = _w; h = _h;
+    minVal = _min; maxVal = _max; val = _startVal;
+  }
+  
+  void display() {
+    fill(200);
+    textAlign(LEFT, BOTTOM);
+    textSize(18);
+    text(label + ": " + (int)val, x, y - 5);
+    
+    fill(50);
+    stroke(100);
+    rectMode(CORNER);
+    rect(x, y, w, h, 10);
+    
+    float handleX = map(val, minVal, maxVal, x, x + w);
+    fill(dragging ? color(255, 200, 0) : color(255));
+    noStroke();
+    rectMode(CENTER);
+    rect(handleX, y + h/2, h, h + 10, 5);
+  }
+  
+  boolean isHit(float mx, float my) {
+    return (mx >= x - 20 && mx <= x + w + 20 && my >= y - 20 && my <= y + h + 20);
+  }
+  
+  void update(float mx) {
+    val = map(mx, x, x + w, minVal, maxVal);
+    val = constrain(val, minVal, maxVal);
+  }
+}
+
+class Button {
+  String label;
+  float x, y, w, h;
+  
+  Button(String _label, float _x, float _y, float _w, float _h) {
+    label = _label; x = _x; y = _y; w = _w; h = _h;
+  }
+  
+  void display() {
+    fill(80, 150, 255);
+    stroke(255);
+    rectMode(CORNER);
+    rect(x, y, w, h, 10);
+    
+    fill(255);
+    textAlign(CENTER, CENTER);
+    textSize(22);
+    text(label, x + w/2, y + h/2);
+  }
+  
+  boolean isHit(float mx, float my) {
+    return (mx >= x && mx <= x + w && my >= y && my <= y + h);
+  }
+}
