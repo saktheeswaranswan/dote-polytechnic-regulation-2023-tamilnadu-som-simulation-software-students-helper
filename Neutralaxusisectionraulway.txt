@@ -1,0 +1,495 @@
+// BENDING STRESS (I-BEAM) 3D VISUALIZER - ULTIMATE PRO VERSION
+// Fully APDE compatible Processing Android code
+// Visualizes Bending Moments, Compressive/Tensile distribution, and Neutral Axis
+
+int state = 0; 
+// 0: External Bending Moments
+// 1: The Section Plane (Slider Active)
+// 2: Internal Equilibrium Moments (Gap introduced)
+// 3: Subdivided Bending Stresses (Red & Blue Vectors)
+// 4: Compressive vs Tensile Regions Explained
+// 5: The Neutral Axis (Zero Stress)
+
+float rotX = 0, rotY = 0;
+float rodLength = 400;
+float bendRadius = 800; // Radius of curvature to simulate bending
+
+Slider cutSlider;
+Button nextButton;
+Button prevButton;
+
+ToggleButton btnToggleLeft;
+ToggleButton btnToggleRight;
+ToggleButton btnSumLeft;
+ToggleButton btnSumRight;
+
+boolean draggingUI = false;
+
+// Pre-defined 2D profile for the I-Beam (x, y) and segment normals (nx, ny)
+float[][] profile = {
+  {-50, -60,  0, -1}, { 50, -60,  0, -1}, // Top face
+  { 50, -60,  1,  0}, { 50, -40,  1,  0}, // Right outer top flange
+  { 50, -40,  0,  1}, { 10, -40,  0,  1}, // Bottom right top flange
+  { 10, -40,  1,  0}, { 10,  40,  1,  0}, // Right web
+  { 10,  40,  0, -1}, { 50,  40,  0, -1}, // Top right bottom flange
+  { 50,  40,  1,  0}, { 50,  60,  1,  0}, // Right outer bottom flange
+  { 50,  60,  0,  1}, {-50,  60,  0,  1}, // Bottom face
+  {-50,  60, -1,  0}, {-50,  40, -1,  0}, // Left outer bottom flange
+  {-50,  40,  0, -1}, {-10,  40,  0, -1}, // Top left bottom flange
+  {-10,  40, -1,  0}, {-10, -40, -1,  0}, // Left web
+  {-10, -40,  0,  1}, {-50, -40,  0,  1}, // Bottom left top flange
+  {-50, -40, -1,  0}, {-50, -60, -1,  0}  // Left outer top flange
+};
+
+void setup() {
+  size(displayWidth, displayHeight, P3D);
+  orientation(LANDSCAPE);
+  smooth(4);
+  
+  cutSlider = new Slider("Cut Section Position", 50, height - 120, 300, 40, -rodLength/2.2, rodLength/2.2, 0);
+  
+  nextButton = new Button("Next", width - 150, height - 100, 100, 60);
+  prevButton = new Button("Prev", width - 270, height - 100, 100, 60);
+  
+  btnToggleLeft = new ToggleButton("Vis: Left Side", 20, 20, 160, 50, true);
+  btnToggleRight = new ToggleButton("Vis: Right Side", width - 180, 20, 160, 50, true);
+  
+  btnSumLeft = new ToggleButton("Sum to Moment", 20, 80, 160, 50, true);
+  btnSumRight = new ToggleButton("Sum to Moment", width - 180, 80, 160, 50, true);
+}
+
+void draw() {
+  background(15, 25, 35); 
+  
+  boolean isCut = (state >= 1);
+  boolean isSplit = (state >= 2);
+  boolean forceSubdivide = (state >= 3);
+  
+  color momentColor = color(255, 220, 0); 
+  color tensileColor = color(0, 200, 255); 
+  color compColor = color(255, 80, 50); 
+  
+  // ----- 3D SCENE -----
+  pushMatrix();
+  translate(width / 2, height / 2 + 50, -100);
+  
+  rotateX(rotX);
+  rotateY(rotY);
+  
+  // Lighting
+  ambientLight(90, 90, 100);
+  lightSpecular(255, 255, 255);
+  directionalLight(200, 200, 200, 0, 1, -1);
+  directionalLight(120, 120, 150, 1, -1, 0);
+  specular(255, 255, 255);
+  shininess(40.0);
+  
+  float cutZ = cutSlider.val;
+  float thetaCut = cutZ / bendRadius;
+  float gap = isSplit ? 160 : 0; // Increased gap to 160 so opposing vectors don't crash
+  
+  // Tangent shifts to separate the beam accurately along the curve
+  float shiftY = -gap/2 * sin(thetaCut);
+  float shiftZ = -gap/2 * cos(thetaCut);
+
+  // ----- LEFT PIECE -----
+  if (btnToggleLeft.isOn) {
+    pushMatrix();
+    translate(0, shiftY, shiftZ);
+    
+    drawBentIBeam(-rodLength/2, cutZ, true, isCut);
+    
+    // External Left Bending Moment
+    if (state == 0) {
+      pushMatrix();
+      float thetaLeft = (-rodLength/2) / bendRadius;
+      translate(100, bendRadius * cos(thetaLeft) - bendRadius, bendRadius * sin(thetaLeft));
+      rotateX(thetaLeft);
+      drawThickCurveArrow(70, -PI/1.5, PI/1.5, 8, momentColor);
+      popMatrix();
+    }
+    
+    // Internal Left Forces
+    if (isSplit) {
+      pushMatrix();
+      translate(0, bendRadius * cos(thetaCut) - bendRadius, bendRadius * sin(thetaCut));
+      rotateX(thetaCut); 
+      
+      boolean sumView = (!forceSubdivide && btnSumLeft.isOn) || (forceSubdivide && btnSumLeft.isOn && millis()%800 > 400);
+      
+      if (sumView) {
+        // Single internal moment resisting external
+        translate(-80, 0, 0);
+        drawThickCurveArrow(60, -PI/2, PI/2, 8, momentColor);
+      } else {
+        // Subdivided Stresses
+        drawStressVectors(true, compColor, tensileColor);
+      }
+      popMatrix();
+    }
+    popMatrix();
+  }
+  
+  // ----- RIGHT PIECE -----
+  if (btnToggleRight.isOn) {
+    pushMatrix();
+    translate(0, -shiftY, -shiftZ);
+    
+    drawBentIBeam(cutZ, rodLength/2, isCut, true);
+    
+    // External Right Bending Moment
+    if (state == 0) {
+      pushMatrix();
+      float thetaRight = (rodLength/2) / bendRadius;
+      translate(100, bendRadius * cos(thetaRight) - bendRadius, bendRadius * sin(thetaRight));
+      rotateX(thetaRight);
+      drawThickCurveArrow(70, PI/1.5, -PI/1.5, 8, momentColor);
+      popMatrix();
+    }
+    
+    // Internal Right Forces
+    if (isSplit) {
+      pushMatrix();
+      translate(0, bendRadius * cos(thetaCut) - bendRadius, bendRadius * sin(thetaCut));
+      rotateX(thetaCut); 
+      
+      boolean sumView = (!forceSubdivide && btnSumRight.isOn) || (forceSubdivide && btnSumRight.isOn && millis()%800 > 400);
+      
+      if (sumView) {
+        translate(-80, 0, 0);
+        drawThickCurveArrow(60, PI/2, -PI/2, 8, momentColor);
+      } else {
+        drawStressVectors(false, compColor, tensileColor);
+      }
+      popMatrix();
+    }
+    popMatrix();
+  }
+  
+  // ----- CUT PLANE (GLOWING) -----
+  if (state == 1) {
+    pushMatrix();
+    translate(0, bendRadius * cos(thetaCut) - bendRadius, bendRadius * sin(thetaCut));
+    rotateX(thetaCut);
+    noLights();
+    blendMode(ADD);
+    fill(255, 100, 50, 180); 
+    rectMode(CENTER);
+    rect(0, 0, 150, 180);
+    blendMode(BLEND);
+    popMatrix();
+  }
+  
+  popMatrix();
+  
+  // ----- 2D UI -----
+  camera(); 
+  hint(DISABLE_DEPTH_TEST);
+  noLights();
+  
+  drawTextOverlay();
+  
+  if (isCut) cutSlider.display();
+  nextButton.display();
+  prevButton.display();
+  
+  if (isSplit) {
+    btnToggleLeft.display();
+    btnToggleRight.display();
+  }
+  
+  if (forceSubdivide) {
+    if (btnToggleLeft.isOn) btnSumLeft.display();
+    if (btnToggleRight.isOn) btnSumRight.display();
+  }
+  
+  hint(ENABLE_DEPTH_TEST);
+}
+
+
+// ----- TEXT EXPLANATIONS -----
+void drawTextOverlay() {
+  fill(255);
+  textAlign(CENTER, TOP);
+  textSize(30);
+  
+  String title = "";
+  String desc = "";
+  
+  switch(state) {
+    case 0:
+      title = "Bending Moments";
+      desc = "The I-Beam is subjected to external bending moments (Yellow Arrows).\nThis causes the entire beam to curve into a 'U' shape.";
+      break;
+    case 1:
+      title = "Section Plane";
+      desc = "We cut a section to observe the internal stresses.\nNotice the beam is curved - use the slider to move along the arc.";
+      break;
+    case 2:
+      title = "Internal Equilibrium Moment";
+      desc = "To maintain equilibrium, the internal material generates a reacting moment.\nThis internal twisting force resists the external bending.";
+      break;
+    case 3:
+      title = "Bending Stress Distribution";
+      desc = "The internal moment is actually created by millions of tiny stresses.\nToggle the 'Sum' buttons to see how stresses replace the moment.";
+      break;
+    case 4:
+      title = "Compression vs Tension";
+      desc = "Because the beam curves UP, the top is squished (Red Compressive Stress)\nand the bottom is stretched (Sky-Blue Tensile Stress).";
+      break;
+    case 5:
+      title = "The Neutral Axis";
+      desc = "Notice the middle of the I-Beam has NO arrows.\nThis center plane does not stretch or compress. It is the Neutral Axis.";
+      break;
+  }
+  
+  text(title, width/2, 15);
+  textSize(20);
+  fill(200);
+  text(desc, width/2, 60);
+}
+
+
+// ----- 3D BENDING & I-BEAM GEOMETRY -----
+
+void drawBentIBeam(float z1, float z2, boolean cap1, boolean cap2) {
+  int steps = max(1, int(abs(z2 - z1) / 15));
+  float dz = (z2 - z1) / steps;
+  
+  fill(190, 200, 220);
+  noStroke();
+  
+  for(int p = 0; p < 24; p += 2) {
+    float x1 = profile[p][0], y1 = profile[p][1], nx = profile[p][2], ny = profile[p][3];
+    float x2 = profile[p+1][0], y2 = profile[p+1][1];
+    
+    beginShape(QUAD_STRIP);
+    for(int i = 0; i <= steps; i++) {
+      float z = z1 + i * dz;
+      float theta = z / bendRadius;
+      
+      float ry1 = (bendRadius + y1);
+      float bY1 = ry1 * cos(theta) - bendRadius;
+      float bZ1 = ry1 * sin(theta);
+      
+      float ry2 = (bendRadius + y2);
+      float bY2 = ry2 * cos(theta) - bendRadius;
+      float bZ2 = ry2 * sin(theta);
+      
+      float bnY = ny * cos(theta);
+      float bnZ = ny * sin(theta);
+      
+      normal(nx, bnY, bnZ);
+      vertex(x1, bY1, bZ1);
+      vertex(x2, bY2, bZ2);
+    }
+    endShape();
+  }
+  
+  if (cap1) drawCap(z1, true);
+  if (cap2) drawCap(z2, false);
+}
+
+void drawCap(float z, boolean reverseNormal) {
+  float theta = z / bendRadius;
+  pushMatrix();
+  float bY = bendRadius * cos(theta) - bendRadius;
+  float bZ = bendRadius * sin(theta);
+  translate(0, bY, bZ);
+  rotateX(theta);
+  
+  fill(160, 170, 190);
+  normal(0, 0, reverseNormal ? -1 : 1);
+  rectMode(CENTER);
+  noStroke();
+  
+  // Draw the 3 rectangles forming the I-profile face
+  rect(0, -50, 100, 20); // Top Flange
+  rect(0, 0, 20, 80);    // Web
+  rect(0, 50, 100, 20);  // Bottom Flange
+  popMatrix();
+}
+
+void drawStressVectors(boolean isLeftPiece, color cComp, color cTensile) {
+  for(float y = -55; y <= 55; y += 10) {
+    for(float x = -45; x <= 45; x += 10) {
+      
+      // Boundary check to ensure arrows only spawn ON the I-profile
+      boolean inWeb = (abs(x) <= 10 && abs(y) <= 40);
+      boolean inFlange = (abs(x) <= 50 && abs(y) >= 40 && abs(y) <= 60);
+      
+      if (inWeb || inFlange) {
+        float stressMag = abs(y) / 60.0;
+        if (stressMag < 0.15) continue; // Leave neutral axis clear
+        
+        float len = stressMag * 70; // Varies linearly from center
+        boolean isComp = (y < 0);
+        
+        pushMatrix();
+        translate(x, y, 0);
+        
+        // FIX: Ensure compressive arrows are physically located in the gap,
+        // pushing AGAINST the face, rather than being drawn inside the solid beam.
+        if (isLeftPiece) {
+          if (isComp) {
+            rotateY(PI);
+            translate(0, 0, -len); // Move base into gap, tip touches face
+          }
+        } else {
+          if (isComp) {
+            translate(0, 0, -len); // Move base into gap, tip touches face
+          } else {
+            rotateY(PI); // Pull away from right face into the gap
+          }
+        }
+        
+        drawArrow(len, 2.5, isComp ? cComp : cTensile);
+        popMatrix();
+      }
+    }
+  }
+}
+
+void drawThickCurveArrow(float r, float startAng, float endAng, float thick, color c) {
+  fill(c); noStroke();
+  int steps = 25;
+  float angStep = (endAng - startAng) / steps;
+  
+  // Sweeping tube
+  for(int i = 0; i <= steps; i++) {
+    float a = startAng + i * angStep;
+    pushMatrix();
+    translate(0, r * sin(a), r * cos(a));
+    sphereDetail(6);
+    sphere(thick);
+    popMatrix();
+  }
+  
+  // Arrow Head
+  pushMatrix();
+  translate(0, r * sin(endAng), r * cos(endAng));
+  float dy = cos(endAng);
+  float dz = -sin(endAng);
+  if (endAng < startAng) { dy = -dy; dz = -dz; }
+  
+  rotateX(atan2(dy, dz));
+  translate(0, 0, thick);
+  drawCone(thick * 2.5, thick * 5, 12);
+  popMatrix();
+}
+
+void drawArrow(float len, float r, color c) {
+  fill(c); noStroke();
+  float shaftLen = len * 0.7;
+  pushMatrix();
+  translate(0, 0, shaftLen/2);
+  drawCylinder(r * 0.5, shaftLen, 8);
+  popMatrix();
+  pushMatrix();
+  translate(0, 0, shaftLen);
+  drawCone(r, len - shaftLen, 8);
+  popMatrix();
+}
+
+void drawCylinder(float r, float h, int sides) {
+  float angle = 0, angleStep = TWO_PI / sides;
+  beginShape(QUAD_STRIP);
+  for (int i = 0; i <= sides; i++) {
+    float x = cos(angle) * r, y = sin(angle) * r;
+    normal(cos(angle), sin(angle), 0);
+    vertex(x, y, -h/2); vertex(x, y, h/2);
+    angle += angleStep;
+  }
+  endShape();
+}
+
+void drawCone(float r, float h, int sides) {
+  float angle = 0, angleStep = TWO_PI / sides;
+  beginShape(TRIANGLE_FAN);
+  vertex(0, 0, h); 
+  for (int i = 0; i <= sides; i++) {
+    float x = cos(angle) * r, y = sin(angle) * r;
+    vertex(x, y, 0);
+    angle += angleStep;
+  }
+  endShape();
+}
+
+
+// ----- UI CONTROLS -----
+
+void mousePressed() {
+  draggingUI = false;
+  if (state >= 1 && cutSlider.isHit(mouseX, mouseY)) {
+    cutSlider.dragging = true; draggingUI = true;
+  }
+}
+
+void mouseDragged() {
+  if (cutSlider.dragging) cutSlider.update(mouseX);
+  else if (!draggingUI) {
+    rotY += (mouseX - pmouseX) * 0.01;
+    rotX -= (mouseY - pmouseY) * 0.01;
+  }
+}
+
+void mouseReleased() {
+  cutSlider.dragging = false;
+  
+  if (nextButton.isHit(mouseX, mouseY)) { if (state < 5) state++; }
+  if (prevButton.isHit(mouseX, mouseY)) { if (state > 0) state--; }
+  
+  if (state >= 2) {
+    if (btnToggleLeft.isHit(mouseX, mouseY)) btnToggleLeft.toggle();
+    if (btnToggleRight.isHit(mouseX, mouseY)) btnToggleRight.toggle();
+  }
+  
+  if (state >= 3) {
+    if (btnToggleLeft.isOn && btnSumLeft.isHit(mouseX, mouseY)) btnSumLeft.toggle();
+    if (btnToggleRight.isOn && btnSumRight.isHit(mouseX, mouseY)) btnSumRight.toggle();
+  }
+}
+
+class ToggleButton {
+  String label; float x, y, w, h; boolean isOn;
+  ToggleButton(String _label, float _x, float _y, float _w, float _h, boolean _state) {
+    label = _label; x = _x; y = _y; w = _w; h = _h; isOn = _state;
+  }
+  void display() {
+    fill(isOn ? color(40, 180, 80) : color(180, 60, 60));
+    stroke(255); strokeWeight(2); rectMode(CORNER);
+    rect(x, y, w, h, 8);
+    fill(255); textAlign(CENTER, CENTER); textSize(18);
+    text(label, x + w/2, y + h/2); strokeWeight(1);
+  }
+  boolean isHit(float mx, float my) { return (mx >= x && mx <= x+w && my >= y && my <= y+h); }
+  void toggle() { isOn = !isOn; }
+}
+
+class Slider {
+  String label; float x, y, w, h, minVal, maxVal, val; boolean dragging = false;
+  Slider(String _label, float _x, float _y, float _w, float _h, float _min, float _max, float _start) {
+    label = _label; x = _x; y = _y; w = _w; h = _h; minVal = _min; maxVal = _max; val = _start;
+  }
+  void display() {
+    fill(200); textAlign(LEFT, BOTTOM); textSize(18);
+    text(label, x, y - 5);
+    fill(50); stroke(100); rectMode(CORNER);
+    rect(x, y, w, h, 10);
+    float handleX = map(val, minVal, maxVal, x, x + w);
+    fill(dragging ? color(255, 200, 0) : color(255)); noStroke(); rectMode(CENTER);
+    rect(handleX, y + h/2, h, h + 10, 5);
+  }
+  boolean isHit(float mx, float my) { return (mx >= x-20 && mx <= x+w+20 && my >= y-20 && my <= y+h+20); }
+  void update(float mx) { val = constrain(map(mx, x, x+w, minVal, maxVal), minVal, maxVal); }
+}
+
+class Button {
+  String label; float x, y, w, h;
+  Button(String _label, float _x, float _y, float _w, float _h) { label = _label; x = _x; y = _y; w = _w; h = _h; }
+  void display() {
+    fill(80, 150, 255); stroke(255); rectMode(CORNER); rect(x, y, w, h, 10);
+    fill(255); textAlign(CENTER, CENTER); textSize(22); text(label, x + w/2, y + h/2);
+  }
+  boolean isHit(float mx, float my) { return (mx >= x && mx <= x+w && my >= y && my <= y+h); }
+}
