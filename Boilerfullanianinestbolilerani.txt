@@ -1,0 +1,569 @@
+/*
+ * ================================================================
+ * GAS DYNAMICS & BOILER STRESS VISUALIZATION (METALLIC)
+ * ================================================================
+ * APDE / Processing for Android | Renderer: P3D
+ * ================================================================
+ */
+
+int currentScreen = 1;
+final int MAX_SCREENS = 9; 
+
+Particle[] particles;
+final int NUM_PARTICLES = 130;
+
+float cylinderRadius = 150;
+float cylinderHeight = 430; 
+float cylinderThickness = 15;
+
+// 3D Camera/Rotation state
+float rotX = radians(15);
+float rotY = 0.0;
+float lastMouseX, lastMouseY;
+boolean isDragging3D = false;
+
+// UI State
+float boilerAlpha = 220;
+float symmetricCutAngle = 0; 
+Slider alphaSlider;
+Slider cutSlider;
+
+// Colors
+color GAS_COLOR = color(255, 150, 25);
+color GREEN_PRESSURE = color(0, 255, 70); 
+color RED_PRESSURE = color(255, 40, 40);  
+color WHITE_PRESSURE = color(255);
+color BLUE_BUTTON = color(45, 115, 190);
+color SLIDER_TRACK = color(75, 80, 90);
+color SLIDER_KNOB = color(255, 210, 60); 
+
+void setup() {
+  size(displayWidth, displayHeight, P3D);
+  orientation(LANDSCAPE);
+  smooth(4);
+
+  particles = new Particle[NUM_PARTICLES];
+  for (int i = 0; i < NUM_PARTICLES; i++) {
+    particles[i] = new Particle();
+  }
+
+  // Initialize Sliders
+  alphaSlider = new Slider(width - 355, height - 195, 300, 12, 20, 255, boilerAlpha, "Transparency");
+  cutSlider = new Slider(width - 355, height - 125, 300, 12, 0, PI * 0.99, symmetricCutAngle, "Cut Section (Both Sides)");
+}
+
+void draw() {
+  background(15, 20, 30);
+  
+  if (currentScreen <= 5) {
+    boilerAlpha = alphaSlider.getValue();
+    symmetricCutAngle = cutSlider.getValue();
+  }
+
+  if (currentScreen <= 5) {
+    // Realistic metallic lighting for 3D Engine
+    ambientLight(70, 75, 85);
+    directionalLight(255, 255, 255, 0.5, 0.7, -1);
+    directionalLight(100, 110, 130, -0.5, -0.3, 1);
+    lightSpecular(200, 200, 200);
+  
+    pushMatrix();
+    translate(width / 2, height / 2 + 15, -100);
+    
+    // Apply user-controlled rotations
+    rotateX(rotX);
+    rotateY(rotY);
+  
+    switch(currentScreen) {
+      case 1: drawScene1(); break;
+      case 2: drawScene2(); break;
+      case 3: drawScene3(); break;
+      case 4: drawScene4(); break;
+      case 5: drawScene5(); break;
+    }
+    popMatrix();
+  } else {
+    // Screens 6, 7, 8, 9 are static formula and 2D patch/graph views
+    switch(currentScreen) {
+      case 6: drawDerivationScene(); break;
+      case 7: drawLongitudinalDerivationScene(); break;
+      case 8: drawPatchStressScene(); break;
+      case 9: drawThinVsThickScene(); break;
+    }
+  }
+  
+  drawHUD();
+}
+
+// ================================================================
+// SCENE RENDERERS (3D ANIMATED)
+// ================================================================
+
+void drawScene1() { 
+  pushMatrix(); rotateZ(radians(90)); setMetallicMaterial(boilerAlpha); drawDynamicBoiler(symmetricCutAngle); popMatrix();
+}
+
+void drawScene2() { 
+  pushMatrix(); rotateZ(radians(90)); setMetallicMaterial(boilerAlpha); drawDynamicBoiler(symmetricCutAngle); updateAndDrawParticles(); popMatrix();
+}
+
+void drawScene3() { 
+  pushMatrix(); setMetallicMaterial(boilerAlpha); drawDynamicBoiler(symmetricCutAngle); updateAndDrawParticles(); popMatrix();
+}
+
+void drawScene4() { 
+  pushMatrix(); setMetallicMaterial(boilerAlpha); drawDynamicBoiler(symmetricCutAngle); updateAndDrawParticles(); drawPressureImpactArrows(); popMatrix();
+}
+
+void drawScene5() { 
+  pushMatrix(); updateAndDrawParticles(); drawGreenInternalPressure(); drawRedInternalPressure(); setMetallicMaterial(boilerAlpha); drawDynamicBoiler(symmetricCutAngle); drawInnerWallRings(); drawStressLabels(); popMatrix();
+}
+
+// ================================================================
+// SCENE RENDERERS (STATIC EDUCATIONAL OVERLAYS)
+// ================================================================
+
+void drawDerivationScene() {
+  camera(); hint(DISABLE_DEPTH_TEST);
+  pushMatrix();
+  fill(255); textSize(42); textAlign(CENTER, CENTER);
+  text("HOOP STRESS DERIVATION", width/2, height/2 - 160);
+  
+  textSize(32); fill(GAS_COLOR);
+  text("Bursting Force (F) = p × D × L", width/2, height/2 - 50);
+  
+  fill(GREEN_PRESSURE);
+  text("Resisting Force (Fr) = σh × 2t × L", width/2, height/2 + 10);
+  
+  fill(255);
+  text("Equilibrium:  p · D · L = 2 · σh · t · L", width/2, height/2 + 75);
+  
+  textSize(48); fill(SLIDER_KNOB);
+  text("σh = pD / 2t", width/2, height/2 + 170);
+  popMatrix();
+  hint(ENABLE_DEPTH_TEST);
+}
+
+void drawLongitudinalDerivationScene() {
+  camera(); hint(DISABLE_DEPTH_TEST);
+  pushMatrix();
+  fill(255); textSize(42); textAlign(CENTER, CENTER);
+  text("LONGITUDINAL STRESS DERIVATION", width/2, height/2 - 160);
+  
+  textSize(32); fill(GAS_COLOR);
+  text("Axial Gas Force = p · π (D² / 4)", width/2, height/2 - 50);
+  
+  fill(RED_PRESSURE);
+  text("Resisting Wall Force = σl · π D t", width/2, height/2 + 10);
+  
+  fill(255);
+  text("Equilibrium:  σl · π D t = p · π (D² / 4)", width/2, height/2 + 75);
+  
+  textSize(48); fill(GREEN_PRESSURE);
+  text("σl = pD / 4t", width/2, height/2 + 170);
+  popMatrix();
+  hint(ENABLE_DEPTH_TEST);
+}
+
+void drawPatchStressScene() {
+  camera(); hint(DISABLE_DEPTH_TEST);
+  pushMatrix();
+  translate(width/2, height/2 - 20);
+  
+  fill(255); textSize(36); textAlign(CENTER, CENTER);
+  text("WALL STRESS ELEMENT (BIAXIAL STATE)", 0, -220);
+  
+  fill(240); noStroke(); rectMode(CENTER);
+  rect(0, 0, 140, 140, 8);
+  rectMode(CORNER);
+  
+  draw2DArrow(0, -70, 0, -160, SLIDER_KNOB, 18, 8);
+  draw2DArrow(0, 70, 0, 160, SLIDER_KNOB, 18, 8);
+  fill(SLIDER_KNOB); textSize(28); 
+  text("σh (Hoop)", 0, -200);
+  text("σh", 0, 200);
+  
+  draw2DArrow(-70, 0, -180, 0, GREEN_PRESSURE, 18, 8);
+  draw2DArrow(70, 0, 180, 0, GREEN_PRESSURE, 18, 8);
+  fill(GREEN_PRESSURE); 
+  text("σl (Longitudinal)", 0, 240);
+  text("σl", -220, 0); text("σl", 220, 0);
+  
+  draw2DArrow(-100, 35, -45, 35, RED_PRESSURE, 14, 5);
+  draw2DArrow(100, 35, 45, 35, RED_PRESSURE, 14, 5);
+  fill(RED_PRESSURE); textSize(22);
+  text("-pi", -135, 33);
+  text("-pi", 135, 33);
+
+  popMatrix();
+  hint(ENABLE_DEPTH_TEST);
+}
+
+void drawThinVsThickScene() {
+  camera(); hint(DISABLE_DEPTH_TEST);
+  pushMatrix();
+  translate(width/2, height/2 + 60);
+  textAlign(CENTER, CENTER);
+  
+  pushMatrix();
+  translate(-320, 0);
+  fill(160); noStroke(); rect(-120, 0, 240, 160, 6);
+  fill(120); rect(-120, 0, 240, 10);
+  fill(180); textSize(20); text("THIN-WALLED\nPRESSURE VESSEL", 0, 220);
+  
+  beginShape(); noFill(); stroke(SLIDER_KNOB); strokeWeight(2);
+  for(float i = -100; i <= 100; i += 40) {
+    float norm = norm(i, -100, 100);
+    float h = lerp(130, 105, norm); 
+    draw2DArrow(i, 0, i, -h, SLIDER_KNOB, 14, 6);
+    vertex(i, -h);
+  }
+  endShape();
+  popMatrix();
+
+  pushMatrix();
+  translate(250, 0);
+  fill(160); noStroke(); rect(-220, 0, 440, 160, 6);
+  fill(120); rect(-220, 0, 440, 10); 
+  fill(180); textSize(20); text("THICK-WALLED\nPRESSURE VESSEL", 0, 220);
+  
+  beginShape(); noFill(); stroke(SLIDER_KNOB); strokeWeight(2);
+  for(float i = -200; i <= 200; i += 33.3f) {
+    float norm = norm(i, -200, 200);
+    float h = lerp(200, 45, pow(norm, 0.65)); 
+    draw2DArrow(i, 0, i, -h, SLIDER_KNOB, 14, 6);
+    vertex(i, -h);
+  }
+  endShape();
+  popMatrix();
+  popMatrix();
+  hint(ENABLE_DEPTH_TEST);
+}
+
+void draw2DArrow(float x1, float y1, float x2, float y2, color c, float headSize, float weight) {
+  stroke(c); strokeWeight(weight);
+  line(x1, y1, x2, y2);
+  pushMatrix();
+  translate(x2, y2);
+  float a = atan2(y2 - y1, x2 - x1);
+  rotate(a);
+  fill(c); noStroke();
+  triangle(0, -headSize*0.6f, headSize, 0, 0, headSize*0.6f);
+  popMatrix();
+}
+
+// ================================================================
+// METALLIC RENDERING & GEOMETRY (3D)
+// ================================================================
+
+void setMetallicMaterial(float alphaVal) {
+  fill(160, 175, 185, alphaVal); specular(255, 255, 255); shininess(25.0); noStroke();
+}
+
+void drawDynamicBoiler(float cutA) {
+  float startA = cutA; float endA = TWO_PI - cutA;
+  drawCylinder(cylinderRadius, cylinderHeight, startA, endA);
+}
+
+void drawCylinder(float radius, float height, float startAngle, float endAngle) {
+  float step = TWO_PI / 48.0;
+  beginShape(QUAD_STRIP);
+  for (float angle = startAngle; angle <= endAngle + 0.001; angle += step) {
+    float y = cos(angle) * radius; float z = sin(angle) * radius;
+    normal(0, cos(angle), sin(angle));
+    vertex(-height / 2, y, z); vertex(height / 2, y, z);
+  }
+  endShape();
+  drawDomedCap(-height/2, radius, startAngle, endAngle, false);
+  drawDomedCap(height/2, radius, startAngle, endAngle, true);
+  if (endAngle - startAngle < TWO_PI - 0.1) {
+    drawCutEdge(radius, height, startAngle, 1);
+    drawCutEdge(radius, height, endAngle, -1);
+  }
+}
+
+void drawDomedCap(float xOffset, float r, float startA, float endA, boolean isRight) {
+  int latSteps = 12; int lonSteps = (int)(abs(endA - startA) * 12);
+  if(lonSteps < 1) lonSteps = 1;
+  float latStep = HALF_PI / latSteps; float lonStep = (endA - startA) / lonSteps;
+  for (int i = 0; i < latSteps; i++) {
+    float lat1 = i * latStep; float lat2 = (i + 1) * latStep;
+    beginShape(QUAD_STRIP);
+    for (int j = 0; j <= lonSteps; j++) {
+      float lon = startA + j * lonStep; float dir = isRight ? 1 : -1;
+      normal(dir * sin(lat1), cos(lat1) * cos(lon), cos(lat1) * sin(lon));
+      vertex(xOffset + dir * r * sin(lat1), r * cos(lat1) * cos(lon), r * cos(lat1) * sin(lon));
+      normal(dir * sin(lat2), cos(lat2) * cos(lon), cos(lat2) * sin(lon));
+      vertex(xOffset + dir * r * sin(lat2), r * cos(lat2) * cos(lon), r * cos(lat2) * sin(lon));
+    }
+    endShape();
+  }
+}
+
+void drawCutEdge(float r, float h, float angle, float normalSign) {
+  float innerR = r - cylinderThickness;
+  fill(130, 140, 150, boilerAlpha);
+  beginShape(QUAD_STRIP);
+  float nx = 0; float ny = -sin(angle) * normalSign; float nz = cos(angle) * normalSign;
+  int steps = 12;
+  for(int i = steps; i >= 0; i--) {
+    float lat = i * (HALF_PI / steps); normal(nx, ny, nz);
+    vertex(-h/2 - r*sin(lat), r*cos(lat)*cos(angle), r*cos(lat)*sin(angle));
+    vertex(-h/2 - innerR*sin(lat), innerR*cos(lat)*cos(angle), innerR*cos(lat)*sin(angle));
+  }
+  for(int i = 0; i <= steps; i++) {
+    float lat = i * (HALF_PI / steps); normal(nx, ny, nz);
+    vertex(h/2 + r*sin(lat), r*cos(lat)*cos(angle), r*cos(lat)*sin(angle));
+    vertex(h/2 + innerR*sin(lat), innerR*cos(lat)*cos(angle), innerR*cos(lat)*sin(angle));
+  }
+  endShape();
+}
+
+// ================================================================
+// PHYSICS ARROWS (3D ENGINE)
+// ================================================================
+
+void drawGreenInternalPressure() {
+  float innerR = cylinderRadius - cylinderThickness; float arrowLength = 40;
+  float startRadius = innerR - arrowLength; 
+  for (float x = -cylinderHeight / 2 + 30; x <= cylinderHeight / 2 - 30; x += 65) {
+    for (float angle = 0; angle < TWO_PI; angle += PI / 6) {
+      if(angle > symmetricCutAngle && angle < TWO_PI - symmetricCutAngle) {
+        PVector radial = new PVector(0, cos(angle), sin(angle));
+        PVector start = new PVector(x, radial.y * startRadius, radial.z * startRadius);
+        drawPressureArrow(start, PVector.mult(radial, arrowLength), GREEN_PRESSURE, 5, 15);
+      }
+    }
+  }
+}
+
+void drawRedInternalPressure() {
+  float innerR = cylinderRadius - cylinderThickness; float arrowLength = 40;
+  float cxRight = cylinderHeight / 2; float cxLeft = -cylinderHeight / 2;
+  if (symmetricCutAngle < PI - 0.1) {
+     drawPressureArrow(new PVector(cxRight + (innerR - arrowLength), 0, 0), new PVector(arrowLength, 0, 0), RED_PRESSURE, 5, 15);
+     drawPressureArrow(new PVector(cxLeft - (innerR - arrowLength), 0, 0), new PVector(-arrowLength, 0, 0), RED_PRESSURE, 5, 15);
+  }
+  for (int i = 1; i <= 3; i++) {
+    float theta = i * (PI / 8); 
+    for (float phi = 0; phi < TWO_PI; phi += PI / 6) {
+      if (phi > symmetricCutAngle && phi < TWO_PI - symmetricCutAngle) {
+        PVector dirR = new PVector(cos(theta), sin(theta) * cos(phi), sin(theta) * sin(phi));
+        PVector startR = new PVector(cxRight + (innerR - arrowLength) * dirR.x, (innerR - arrowLength) * dirR.y, (innerR - arrowLength) * dirR.z);
+        drawPressureArrow(startR, PVector.mult(dirR, arrowLength), RED_PRESSURE, 5, 15);
+        PVector dirL = new PVector(-cos(theta), sin(theta) * cos(phi), sin(theta) * sin(phi));
+        PVector startL = new PVector(cxLeft + (innerR - arrowLength) * dirL.x, (innerR - arrowLength) * dirL.y, (innerR - arrowLength) * dirL.z);
+        drawPressureArrow(startL, PVector.mult(dirL, arrowLength), RED_PRESSURE, 5, 15);
+      }
+    }
+  }
+}
+
+void drawPressureImpactArrows() {
+  float innerR = cylinderRadius - cylinderThickness; float arrowLength = 35;
+  float startRadius = innerR - arrowLength;
+  for (float x = -cylinderHeight / 2 + 45; x <= cylinderHeight / 2 - 45; x += 75) {
+    for (float angle = 0; angle < TWO_PI; angle += PI / 4) {
+      if(angle > symmetricCutAngle && angle < TWO_PI - symmetricCutAngle) {
+        PVector normal = new PVector(0, cos(angle), sin(angle));
+        PVector start = new PVector(x, normal.y * startRadius, normal.z * startRadius);
+        drawPressureArrow(start, PVector.mult(normal, arrowLength), WHITE_PRESSURE, 3, 10);
+      }
+    }
+  }
+}
+
+void drawPressureArrow(PVector start, PVector direction, color arrowColor, float shaftWeight, float headSize) {
+  float length = direction.mag(); if (length <= 0.001) return;
+  PVector unit = direction.copy(); unit.normalize();
+  float shaftLength = max(0, length - headSize * 0.55);
+  stroke(arrowColor); strokeWeight(shaftWeight);
+  line(start.x, start.y, start.z, start.x + unit.x * shaftLength, start.y + unit.y * shaftLength, start.z + unit.z * shaftLength);
+  pushMatrix(); translate(start.x + direction.x, start.y + direction.y, start.z + direction.z);
+  float yaw = atan2(unit.y, unit.x); float pitch = atan2(sqrt(unit.x * unit.x + unit.y * unit.y), unit.z);
+  rotateZ(yaw); rotateY(pitch);
+  fill(arrowColor); noStroke();
+  beginShape(TRIANGLE_FAN); vertex(0, 0, headSize);
+  for (int i = 0; i <= 8; i++) vertex(cos(TWO_PI * i / 8) * headSize*0.55, sin(TWO_PI * i / 8) * headSize*0.55, 0);
+  endShape();
+  popMatrix();
+}
+
+void drawInnerWallRings() {
+  float radius = cylinderRadius - cylinderThickness;
+  noFill(); stroke(GREEN_PRESSURE, 75); strokeWeight(1);
+  for (float x = -cylinderHeight / 2 + 35; x <= cylinderHeight / 2 - 35; x += 80) {
+    pushMatrix(); translate(x, 0, 0); beginShape();
+    for (float angle = symmetricCutAngle; angle <= (TWO_PI - symmetricCutAngle) + 0.01; angle += PI / 28) {
+      vertex(0, cos(angle) * radius, sin(angle) * radius);
+    }
+    endShape(); popMatrix();
+  }
+}
+
+void drawStressLabels() {
+  pushMatrix(); 
+  translate(0, cylinderRadius + 105, 0); 
+  
+  // Undo global rotations so text acts as a billboard facing the camera
+  rotateY(-rotY); 
+  rotateX(-rotX);
+  
+  textAlign(CENTER, CENTER);
+  fill(GREEN_PRESSURE); textSize(24); text("GREEN → RADIAL INTERNAL PRESSURE\n→ HOOP STRESS", 0, -40);
+  fill(RED_PRESSURE); text("RED → AXIAL INTERNAL PRESSURE\n→ LONGITUDINAL STRESS", 0, 25);
+  fill(255); textSize(29); text("BOILER INTERNAL PRESSURE → WALL STRESS", 0, 87);
+  popMatrix();
+}
+
+// ================================================================
+// PARTICLES (Constrained inside boiler walls)
+// ================================================================
+
+boolean isInsideBoiler(PVector p, float r) {
+  if (p.x >= -cylinderHeight/2 && p.x <= cylinderHeight/2) return (p.y*p.y + p.z*p.z) <= r*r;
+  else if (p.x > cylinderHeight/2) return (pow(p.x - cylinderHeight/2, 2) + p.y*p.y + p.z*p.z) <= r*r;
+  else return (pow(p.x - (-cylinderHeight/2), 2) + p.y*p.y + p.z*p.z) <= r*r;
+}
+
+class Particle {
+  PVector pos, vel; float innerR = cylinderRadius - cylinderThickness - 4;
+  Particle() {
+    pos = new PVector();
+    do {
+      pos.x = random(-cylinderHeight / 2 - innerR, cylinderHeight / 2 + innerR);
+      pos.y = random(-innerR, innerR); pos.z = random(-innerR, innerR);
+    } while (!isInsideBoiler(pos, innerR));
+    vel = PVector.random3D(); vel.mult(random(2, 6));
+  }
+  void update() {
+    pos.add(vel);
+    if (pos.x > cylinderHeight / 2) { 
+      PVector center = new PVector(cylinderHeight / 2, 0, 0);
+      PVector offset = PVector.sub(pos, center);
+      if (offset.mag() > innerR) { offset.normalize(); vel.sub(PVector.mult(offset, 2 * vel.dot(offset))); offset.mult(innerR); pos = PVector.add(center, offset); }
+    } else if (pos.x < -cylinderHeight / 2) { 
+      PVector center = new PVector(-cylinderHeight / 2, 0, 0);
+      PVector offset = PVector.sub(pos, center);
+      if (offset.mag() > innerR) { offset.normalize(); vel.sub(PVector.mult(offset, 2 * vel.dot(offset))); offset.mult(innerR); pos = PVector.add(center, offset); }
+    } else {
+      if (sqrt(pos.y * pos.y + pos.z * pos.z) > innerR) {
+        PVector normal = new PVector(0, pos.y, pos.z); normal.normalize();
+        vel.sub(PVector.mult(normal, 2 * vel.dot(normal))); pos.y = normal.y * innerR; pos.z = normal.z * innerR;
+      }
+    }
+  }
+  void display() {
+    float pAngle = atan2(pos.z, pos.y); if (pAngle < 0) pAngle += TWO_PI;
+    if (pAngle > symmetricCutAngle && pAngle < TWO_PI - symmetricCutAngle) {
+      pushMatrix(); translate(pos.x, pos.y, pos.z); fill(GAS_COLOR); noStroke(); sphere(4); popMatrix();
+    }
+  }
+}
+void updateAndDrawParticles() { for (Particle p : particles) { p.update(); p.display(); } }
+
+// ================================================================
+// HUD & CONTROLS (WITH MOUSE DRAG/ROTATION LOGIC)
+// ================================================================
+
+void drawHUD() {
+  camera(); hint(DISABLE_DEPTH_TEST);
+  fill(0, 185); noStroke(); rect(0, 0, width, 108);
+
+  String narration = "";
+  switch(currentScreen) {
+    case 1: narration = "SCREEN 1 | METALLIC BOILER (DRAG TO ROTATE)\nPressurized vessel closed state."; break;
+    case 2: narration = "SCREEN 2 | CUT SECTION\nAdjust cut slider to view internal gas dynamics."; break;
+    case 3: narration = "SCREEN 3 | INDUSTRIAL BOILER\nInternal gas pressure acting on the boiler shell."; break;
+    case 4: narration = "SCREEN 4 | GAS PRESSURE\nMolecular collisions create pressure on the wall."; break;
+    case 5: narration = "SCREEN 5 | BOILER STRESS\nGREEN = HOOP STRESS     RED = LONGITUDINAL STRESS"; break;
+    case 6: narration = "SCREEN 6 | FORMULA DERIVATION (HOOP)\npDL = 2σtL equilibrium calculation."; break;
+    case 7: narration = "SCREEN 7 | FORMULA DERIVATION (LONGITUDINAL)\nEquating axial gas force to the structural cross-section."; break;
+    case 8: narration = "SCREEN 8 | WALL STRESS PATCH\nBiaxial state of stress (Hoop & Longitudinal) evaluated on a wall patch."; break;
+    case 9: narration = "SCREEN 9 | THIN VS THICK WALLED\nStress distribution across the thickness of the pressure vessel wall."; break;
+  }
+
+  fill(255); textAlign(CENTER, TOP); textSize(20);
+  text(narration, 25, 17, width - 50, 90);
+
+  // Nav Buttons
+  fill(BLUE_BUTTON); rect(20, height - 95, 185, 60, 12); rect(width - 205, height - 95, 185, 60, 12);
+  fill(255); textAlign(CENTER, CENTER); textSize(23); text("PREVIOUS", 112, height - 65); text("NEXT", width - 112, height - 65);
+  textSize(18); text("SCREEN " + currentScreen + " / " + MAX_SCREENS, width / 2, height - 65);
+
+  if (currentScreen <= 5) { alphaSlider.display(); cutSlider.display(); }
+
+  hint(ENABLE_DEPTH_TEST);
+}
+
+class Slider {
+  float x, y, w, h, minVal, maxVal, currentVal; String label; boolean isDragging = false;
+  Slider(float _x, float _y, float _w, float _h, float _min, float _max, float _start, String _label) {
+    x=_x; y=_y; w=_w; h=_h; minVal=_min; maxVal=_max; currentVal=_start; label=_label;
+  }
+  void display() {
+    fill(255); textAlign(LEFT, CENTER); textSize(16); text(label, x, y - 20);
+    fill(SLIDER_TRACK); noStroke(); rect(x, y, w, h, 8);
+    float knobX = x + ((currentVal - minVal) / (maxVal - minVal)) * w;
+    fill(SLIDER_KNOB); rect(x, y, knobX - x, h, 8); ellipse(knobX, y + h / 2, 22, 22);
+  }
+  void checkDrag(float mx, float my) { if (mx >= x - 20 && mx <= x + w + 20 && my >= y - 15 && my <= y + h + 15) { isDragging = true; updateVal(mx); } }
+  void updateVal(float mx) { currentVal = lerp(minVal, maxVal, (constrain(mx, x, x + w) - x) / w); }
+  float getValue() { return currentVal; }
+}
+
+void mousePressed() {
+  boolean clickedButton = false;
+  
+  if (mouseX > width - 205 && mouseX < width - 20 && mouseY > height - 95 && mouseY < height - 35) { 
+    if (currentScreen < MAX_SCREENS) currentScreen++; 
+    clickedButton = true;
+  }
+  if (mouseX > 20 && mouseX < 205 && mouseY > height - 95 && mouseY < height - 35) { 
+    if (currentScreen > 1) currentScreen--; 
+    clickedButton = true;
+  }
+  
+  if (currentScreen <= 5) { 
+    alphaSlider.checkDrag(mouseX, mouseY); 
+    cutSlider.checkDrag(mouseX, mouseY); 
+    
+    // Only drag 3D object if we aren't interacting with UI Elements
+    if (!alphaSlider.isDragging && !cutSlider.isDragging && !clickedButton) {
+      isDragging3D = true;
+      lastMouseX = mouseX;
+      lastMouseY = mouseY;
+    }
+  }
+}
+
+void mouseDragged() {
+  if (currentScreen <= 5) { 
+    if (alphaSlider.isDragging) {
+      alphaSlider.updateVal(mouseX); 
+    } else if (cutSlider.isDragging) {
+      cutSlider.updateVal(mouseX); 
+    } else if (isDragging3D) {
+      // Calculate rotation based on mouse delta
+      float deltaX = mouseX - lastMouseX;
+      float deltaY = mouseY - lastMouseY;
+      
+      rotY += deltaX * 0.01;
+      rotX -= deltaY * 0.01;
+      
+      // Constrain X rotation to prevent flipping upside down
+      rotX = constrain(rotX, -HALF_PI, HALF_PI);
+      
+      lastMouseX = mouseX;
+      lastMouseY = mouseY;
+    }
+  }
+}
+
+void mouseReleased() {
+  if (currentScreen <= 5) { 
+    alphaSlider.isDragging = false; 
+    cutSlider.isDragging = false; 
+    isDragging3D = false;
+  }
+}
