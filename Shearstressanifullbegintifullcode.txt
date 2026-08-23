@@ -1,0 +1,565 @@
+// SHEAR STRESS 3D VISUALIZER - ULTIMATE PRO VERSION
+// Fully APDE / Android compatible - Oppo K13 Optimized
+// Updates: Oblique Cuts, Normal vs Shear Stress (Sigma/Tau), Stress Elements
+
+int state = 0; 
+float rotX = 0, rotY = 0;
+float rodLength = 400;
+float rodRadius = 60;
+
+Slider cutSlider;
+Slider densitySlider; 
+Button nextButton;
+Button prevButton;
+
+ToggleButton btnToggleLeft;
+ToggleButton btnToggleRight;
+ToggleButton btnSumLeft;
+ToggleButton btnSumRight;
+
+boolean draggingUI = false;
+
+// UI Global Scaling Variables
+float mTextSize;
+
+void setup() {
+  // CRITICAL FOR ANDROID: Uses actual device screen bounds
+  fullScreen(P3D); 
+  orientation(LANDSCAPE);
+  smooth(4);
+  
+  // Align view by default
+  rotY = PI/6;
+  rotX = -PI/8;
+  
+  initUI();
+}
+
+void initUI() {
+  float safeW = width;
+  float safeH = height;
+  
+  float marginX = safeW * 0.05; 
+  float marginY = safeH * 0.06;
+  
+  mTextSize = safeH * 0.03; 
+  
+  float topBtnW = safeW * 0.16;
+  float topBtnH = safeH * 0.08;
+  float topSpacing = safeH * 0.02;
+  
+  btnToggleLeft = new ToggleButton("Show L / Top", marginX, marginY, topBtnW, topBtnH, true);
+  btnSumLeft = new ToggleButton("Sum L / Top", marginX, marginY + topBtnH + topSpacing, topBtnW, topBtnH, false);
+  
+  btnToggleRight = new ToggleButton("Show R / Bot", safeW - marginX - topBtnW, marginY, topBtnW, topBtnH, true);
+  btnSumRight = new ToggleButton("Sum R / Bot", safeW - marginX - topBtnW, marginY + topBtnH + topSpacing, topBtnW, topBtnH, false);
+  
+  float navBtnW = safeW * 0.12;
+  float navBtnH = safeH * 0.10;
+  
+  nextButton = new Button("Next", safeW - marginX - navBtnW, safeH - marginY - navBtnH, navBtnW, navBtnH);
+  prevButton = new Button("Prev", safeW - marginX - navBtnW * 2 - (safeW*0.02), safeH - marginY - navBtnH, navBtnW, navBtnH);
+  
+  float sliderW = safeW * 0.28;
+  float sliderH = safeH * 0.05;
+  float sliderSpacing = safeH * 0.06;
+  float slidersStartY = safeH - marginY - sliderH * 2 - sliderSpacing;
+  
+  densitySlider = new Slider("Vector Density", marginX, slidersStartY, sliderW, sliderH, 3, 12, 6);
+  cutSlider = new Slider("Cut Position", marginX, slidersStartY + sliderH + sliderSpacing, sliderW, sliderH, -150, 150, 0);
+}
+
+void draw() {
+  background(15, 25, 35); 
+  
+  color greenForce = color(0, 255, 100);
+  color yellowShear = color(255, 230, 0);
+  color orangeShear = color(255, 160, 0);
+  color redBolt = color(230, 30, 60);  
+  color cyanNut = color(30, 200, 230); 
+  
+  pushMatrix();
+  translate(width / 2, height * 0.60, 0);
+  
+  float scaleFactor = min(width / 1300.0, height / 800.0);
+  scale(scaleFactor);
+  
+  rotateX(rotX);
+  rotateY(rotY);
+  
+  ambientLight(100, 100, 110);
+  lightSpecular(255, 255, 255);
+  directionalLight(255, 240, 240, 0, 1, -1);
+  directionalLight(150, 150, 180, 1, -1, 0);
+  specular(255, 255, 255);
+  shininess(25.0);
+  
+  // ==========================================
+  // STATES 0-3: TRANSVERSE SHEAR ON A ROD
+  // ==========================================
+  if (state <= 3) {
+    float cutX = cutSlider.val;
+    boolean isSplit = (state >= 2);
+    float gap = isSplit ? 140 : 0; 
+    
+    if (state == 0) {
+      pushMatrix(); translate(0, -rodRadius - 100, 0); drawArrow(100, 18, greenForce, false); popMatrix();
+    }
+    
+    if (btnToggleLeft.isOn) {
+      pushMatrix(); translate(-gap/2, 0, 0);
+      drawRodPiece(true, cutX, 0, state >= 1);
+      if (isSplit) {
+        pushMatrix(); translate(cutX, 0, 0);
+        if (state >= 1) drawGlowingObliqueFace(0, 0);
+        boolean showSingle = (state == 2) || (state == 3 && btnSumLeft.isOn);
+        if (showSingle) { pushMatrix(); rotateX(PI); drawArrow(100, 16, yellowShear, true); popMatrix(); } 
+        else if (state == 3) drawShearVectorsRod(yellowShear, true, (int)densitySlider.val);
+        popMatrix();
+      }
+      popMatrix();
+    }
+    
+    if (btnToggleRight.isOn) {
+      pushMatrix(); translate(gap/2, 0, 0);
+      drawRodPiece(false, cutX, 0, state >= 1);
+      if (isSplit) {
+        pushMatrix(); translate(cutX, 0, 0);
+        if (state >= 1) drawGlowingObliqueFace(0, 0);
+        boolean showSingle = (state == 2) || (state == 3 && btnSumRight.isOn);
+        if (showSingle) { pushMatrix(); drawArrow(100, 16, yellowShear, true); popMatrix(); } 
+        else if (state == 3) drawShearVectorsRod(yellowShear, false, (int)densitySlider.val);
+        popMatrix();
+      }
+      popMatrix();
+    }
+    if (state == 1) drawGlowingObliqueFace(cutX, 0);
+  }
+  
+  // ==========================================
+  // STATE 4: BOLTED JOINT
+  // ==========================================
+  else if (state == 4) {
+    if (!draggingUI && rotX == -PI/8 && rotY == PI/6) { rotX = -PI/12; rotY = -PI/16; }
+    float gap = 120; float boltRad = 18;
+    
+    if (btnToggleLeft.isOn) {
+      pushMatrix(); translate(0, -gap/2, 0);
+      pushMatrix(); translate(40, -20, 0); fill(200, 205, 215); noStroke(); box(180, 40, 100);
+      translate(110, 0, 0); rotateZ(-PI/2); drawArrow(70, 10, greenForce, false); popMatrix();
+      
+      pushMatrix(); fill(redBolt); noStroke(); translate(0, -50, 0); drawHexCylinder(30, 20); 
+      translate(0, 30, 0); drawCylinder(boltRad, 40, 24); popMatrix();
+      
+      pushMatrix(); drawGlowingFaceXZ(boltRad);
+      if (btnSumLeft.isOn) { pushMatrix(); rotateZ(PI/2); drawArrow(80, 12, yellowShear, true); popMatrix(); } 
+      else { drawShearVectorsBoltXZ(yellowShear, true, (int)densitySlider.val, boltRad); }
+      popMatrix(); popMatrix();
+    }
+    
+    if (btnToggleRight.isOn) {
+      pushMatrix(); translate(0, gap/2, 0);
+      pushMatrix(); translate(-40, 20, 0); fill(200, 205, 215); noStroke(); box(180, 40, 100);
+      translate(-110, 0, 0); rotateZ(PI/2); drawArrow(70, 10, greenForce, false); popMatrix();
+      
+      pushMatrix(); translate(0, 20, 0); fill(redBolt); noStroke(); drawCylinder(boltRad, 40, 24); 
+      translate(0, 30, 0); fill(cyanNut); drawHexCylinder(32, 22); popMatrix();
+      
+      pushMatrix(); drawGlowingFaceXZ(boltRad);
+      if (btnSumRight.isOn) { pushMatrix(); rotateZ(-PI/2); drawArrow(80, 12, yellowShear, true); popMatrix(); } 
+      else { drawShearVectorsBoltXZ(yellowShear, false, (int)densitySlider.val, boltRad); }
+      popMatrix(); popMatrix();
+    }
+  }
+  
+  // ==========================================
+  // STATES 5-8: AXIAL TENSION & OBLIQUE CUT
+  // ==========================================
+  else if (state >= 5 && state <= 8) {
+    float cutAngle = (state == 5) ? 0 : PI/6; // 0 for straight, 30 deg for oblique
+    float cutX = cutSlider.val;
+    boolean isSplit = (state == 5 || state >= 7);
+    float gap = isSplit ? 180 : 0; 
+    
+    // External Axial Forces
+    if (btnToggleLeft.isOn) {
+      pushMatrix(); translate(-gap/2 - rodLength/2 - 20, 0, 0); rotateZ(PI/2); drawArrow(80, 15, greenForce, false); popMatrix();
+    }
+    if (btnToggleRight.isOn) {
+      pushMatrix(); translate(gap/2 + rodLength/2 + 20, 0, 0); rotateZ(-PI/2); drawArrow(80, 15, greenForce, false); popMatrix();
+    }
+
+    if (btnToggleLeft.isOn) {
+      pushMatrix(); translate(-gap/2, 0, 0);
+      drawRodPiece(true, cutX, cutAngle, state >= 5);
+      if (isSplit) {
+        if (state >= 6) drawGlowingObliqueFace(cutX, cutAngle);
+        boolean showSingle = (state == 5 || state == 7 || (state == 8 && btnSumLeft.isOn));
+        drawObliqueVectorsGrid(cutAngle, true, (int)densitySlider.val, showSingle, cutX);
+      }
+      popMatrix();
+    }
+    
+    if (btnToggleRight.isOn) {
+      pushMatrix(); translate(gap/2, 0, 0);
+      drawRodPiece(false, cutX, cutAngle, state >= 5);
+      if (isSplit) {
+        if (state >= 6) drawGlowingObliqueFace(cutX, cutAngle);
+        boolean showSingle = (state == 5 || state == 7 || (state == 8 && btnSumRight.isOn));
+        drawObliqueVectorsGrid(cutAngle, false, (int)densitySlider.val, showSingle, cutX);
+      }
+      popMatrix();
+    }
+    
+    if (state == 6) drawGlowingObliqueFace(cutX, cutAngle);
+  }
+  
+  // ==========================================
+  // STATES 9-12: THE STRESS ELEMENT (CUBE)
+  // ==========================================
+  else if (state >= 9) {
+    float s = 70; float skew = (state == 12) ? 30 : 0; 
+    
+    fill(240, 150, 20); // Orange Stress Element
+    stroke(255, 200, 100); strokeWeight(2);
+    
+    beginShape(QUADS);
+    vertex(-s+skew,-s,s); vertex(s+skew,-s,s); vertex(s-skew,s,s); vertex(-s-skew,s,s); 
+    vertex(-s+skew,-s,-s); vertex(s+skew,-s,-s); vertex(s-skew,s,-s); vertex(-s-skew,s,-s);
+    vertex(-s+skew,-s,s); vertex(s+skew,-s,s); vertex(s+skew,-s,-s); vertex(-s+skew,-s,-s);
+    vertex(-s-skew,s,s); vertex(s-skew,s,s); vertex(s-skew,s,-s); vertex(-s-skew,s,-s);
+    vertex(s+skew,-s,s); vertex(s+skew,-s,-s); vertex(s-skew,s,-s); vertex(s-skew,s,s); 
+    vertex(-s+skew,-s,s); vertex(-s+skew,-s,-s); vertex(-s-skew,s,-s); vertex(-s-skew,s,s);
+    endShape(); noStroke();
+    
+    if (state >= 9) { pushMatrix(); translate(s+skew/2+30, 0, 0); rotateX(PI); drawArrow(70, 10, yellowShear, true); popMatrix(); }
+    if (state >= 10) { pushMatrix(); translate(-s-skew/2-30, 0, 0); drawArrow(70, 10, yellowShear, true); popMatrix(); }
+    if (state >= 11) {
+      pushMatrix(); translate(0, -s-30, 0); rotateZ(-PI/2); drawArrow(70, 10, yellowShear, true); popMatrix();
+      pushMatrix(); translate(0, s+30, 0); rotateZ(PI/2); drawArrow(70, 10, yellowShear, true); popMatrix();
+    }
+    
+    if (state == 12) {
+      pushMatrix(); translate(0, -180, 0); fill(255, 230, 50);
+      textSize(55 * scaleFactor); textAlign(CENTER, CENTER); text("tau = G * gamma", 0, 0);
+      popMatrix();
+    }
+  }
+  
+  popMatrix();
+  
+  // ----- 2D UI OVERLAY -----
+  camera(); hint(DISABLE_DEPTH_TEST); noLights();
+  
+  drawTextOverlay();
+  
+  if ((state >= 1 && state <= 3) || (state >= 5 && state <= 8)) cutSlider.display();
+  if (state == 3 || state == 4 || state == 8) densitySlider.display(); 
+  
+  nextButton.display();
+  prevButton.display();
+  
+  if ((state >= 2 && state <= 4) || (state >= 5 && state <= 8)) {
+    btnToggleLeft.display();
+    btnToggleRight.display();
+  }
+  
+  if (state == 3 || state == 4 || state == 8) {
+    if (btnToggleLeft.isOn) btnSumLeft.display();
+    if (btnToggleRight.isOn) btnSumRight.display();
+  }
+  
+  hint(ENABLE_DEPTH_TEST);
+}
+
+
+// ----- TEXT EXPLANATIONS -----
+void drawTextOverlay() {
+  textAlign(CENTER, TOP);
+  String title = ""; String desc = "";
+  
+  switch(state) {
+    case 0: title = "Transverse Shear Force"; desc = "Shear Forces (Green) act ACROSS the material.\nThink of scissors slicing through a thick rod."; break;
+    case 1: title = "The Shear Plane"; desc = "The force acts directly parallel to the cross-sectional plane.\nUse the slider to move the theoretical cut section."; break;
+    case 2: title = "Internal Shear Equilibrium"; desc = "To stop the rod from slicing, internal material generates a reacting force.\nThe Yellow Vector is inscribed and PARALLEL to the face."; break;
+    case 3: title = "Distributed Shear Stress (tau = F / A)"; desc = "Shear stress is distributed across the area. Use slider to increase vector density.\nToggle 'Sum' to see the resultant vector."; break;
+    case 4: title = "Application: Bolted Joint Section"; desc = "The Red Bolt is cut straight across by the tension plates.\nUse toggles to view vectors on the internal cut sections."; break;
+    
+    case 5: title = "Axial Tension & Normal Stress (Sigma)"; desc = "When pulled purely in tension, a straight cut reveals only normal stress.\nThe stress acts uniformly perpendicular to the face."; break;
+    case 6: title = "The Oblique Cut Plane"; desc = "What happens if we analyze the forces along an angled (oblique) plane?\nThe internal equilibrium must still balance the external axial force."; break;
+    case 7: title = "Stress State Decomposition"; desc = "On an oblique face, the axial force decomposes into two vectors:\nA normal stress (Sigma) and a shear stress (Tau) parallel to the cut."; break;
+    case 8: title = "Distributed Oblique Stresses"; desc = "Both the normal and shear stress components are distributed uniformly\nacross the entire elliptical cross-section."; break;
+    
+    case 9: title = "The 3D Stress Element"; desc = "Zooming in on a microscopic point, we extract a 3D stress element\nto analyze how these decomposed forces act on a finite boundary."; break;
+    case 10: title = "Force Equilibrium (Sum of F = 0)"; desc = "To prevent the microscopic cube from accelerating linearly,\nthe adjacent material must pull equally on the opposite face."; break;
+    case 11: title = "Moment Equilibrium (Sum of M = 0)"; desc = "Those two arrows alone would cause the cube to spin uncontrollably.\nEquilibrium demands a complimentary couple on top and bottom."; break;
+    case 12: title = "Shear Strain & Hooke's Law"; desc = "These 4 shear stresses deform the element into a rhombus.\nThis angle change is Shear Strain (gamma). Related by Shear Modulus (G)."; break;
+  }
+  
+  float tSizeTitle = height * 0.045;
+  float tSizeDesc = height * 0.028;
+  float textY = height * 0.03;
+  
+  fill(0, 180); textSize(tSizeTitle); text(title, width/2 + 2, textY + 2);
+  textSize(tSizeDesc); text(desc, width/2 + 2, textY + tSizeTitle + 12);
+  fill(255); textSize(tSizeTitle); text(title, width/2, textY);
+  fill(200, 220, 255); textSize(tSizeDesc); text(desc, width/2, textY + tSizeTitle + 10);
+}
+
+
+// ----- 3D GEOMETRY FUNCTIONS -----
+
+void drawRodPiece(boolean isLeftPiece, float cutX, float cutAngle, boolean showCutFace) {
+  int sides = 36; float angleStep = TWO_PI / sides;
+  fill(190, 200, 210); noStroke();
+  beginShape(QUAD_STRIP);
+  for (int i = 0; i <= sides; i++) {
+    float a = i * angleStep;
+    float y = sin(a) * rodRadius;
+    float z = cos(a) * rodRadius;
+    normal(0, sin(a), cos(a));
+
+    float modX = cutX - y * tan(cutAngle);
+    if (isLeftPiece) {
+      vertex(-rodLength/2, y, z);
+      vertex(modX, y, z);
+    } else {
+      vertex(modX, y, z);
+      vertex(rodLength/2, y, z);
+    }
+  }
+  endShape();
+
+  if (isLeftPiece) drawFlatCap(-rodLength/2, true);
+  else drawFlatCap(rodLength/2, false);
+
+  if (showCutFace) drawObliqueCap(cutX, cutAngle, !isLeftPiece);
+}
+
+void drawFlatCap(float x, boolean reverseNormal) {
+  int sides = 36; float angleStep = TWO_PI / sides;
+  fill(150, 160, 175); beginShape(TRIANGLE_FAN); normal(reverseNormal ? -1 : 1, 0, 0); vertex(x, 0, 0); 
+  for (int i = 0; i <= sides; i++) vertex(x, sin((reverseNormal?-1:1)*i*angleStep)*rodRadius, cos((reverseNormal?-1:1)*i*angleStep)*rodRadius);
+  endShape();
+}
+
+void drawObliqueCap(float cutX, float cutAngle, boolean reverseNormal) {
+  int sides = 36; float angleStep = TWO_PI / sides;
+  fill(150, 160, 175);
+  beginShape(TRIANGLE_FAN);
+  float nx = cos(cutAngle); float ny = sin(cutAngle);
+  if (reverseNormal) { nx = -nx; ny = -ny; }
+  normal(nx, ny, 0);
+
+  vertex(cutX, 0, 0); 
+  for (int i = 0; i <= sides; i++) {
+    float a = (reverseNormal ? -1 : 1) * (i * angleStep);
+    float y = sin(a) * rodRadius; float z = cos(a) * rodRadius;
+    vertex(cutX - y * tan(cutAngle), y, z);
+  }
+  endShape();
+}
+
+void drawGlowingObliqueFace(float cutX, float cutAngle) {
+  noLights(); blendMode(ADD); fill(230, 255, 0, 140); 
+  pushMatrix();
+  translate(cutX, 0, 0);
+  rotateZ(-cutAngle);
+  rotateY(PI/2); 
+  translate(0, 0, 0.5); 
+  ellipse(0, 0, rodRadius*2, rodRadius*2 / cos(cutAngle));
+  popMatrix();
+  blendMode(BLEND);
+}
+
+void drawObliqueVectorsGrid(float cutAngle, boolean isLeftPiece, int divisions, boolean showSingle, float cutX) {
+  float step = (rodRadius * 2.0) / divisions;
+  float maxLen = min(rodRadius * 1.5, step * 0.85);
+  if (showSingle) maxLen = 100;
+  float arrowRad = max(1.5, maxLen * 0.15);
+
+  float r = rodRadius;
+  float uMax = r / cos(cutAngle);
+  float uStep = showSingle ? (uMax*2) : (step / cos(cutAngle));
+  float vStep = showSingle ? (r*2) : step;
+
+  float uStart = showSingle ? 0 : -uMax + uStep/2;
+  float vStart = showSingle ? 0 : -r + vStep/2;
+
+  for (float u = uStart; u < uMax; u += uStep) {
+    for (float v = vStart; v < r; v += vStep) {
+       if (showSingle || (pow(u * cos(cutAngle), 2) + pow(v, 2) <= pow(r - 2, 2))) {
+          float x = cutX - u * sin(cutAngle);
+          float y = u * cos(cutAngle);
+          float z = v;
+
+          pushMatrix();
+          translate(x, y, z);
+
+          // Normal Stress (Sigma)
+          pushMatrix();
+          if (isLeftPiece) rotateZ(cutAngle - PI/2);
+          else rotateZ(cutAngle + PI/2);
+          float sigmaLen = maxLen * cos(cutAngle);
+          if (sigmaLen > 1.0) drawArrow(sigmaLen, arrowRad, color(255, 230, 0), true);
+          popMatrix();
+
+          // Shear Stress (Tau)
+          if (cutAngle > 0.01) {
+            pushMatrix();
+            if (isLeftPiece) rotateZ(PI + cutAngle);
+            else rotateZ(cutAngle);
+            float tauLen = maxLen * sin(cutAngle);
+            if (tauLen > 1.0) drawArrow(tauLen, arrowRad, color(255, 160, 0), true);
+            popMatrix();
+          }
+          popMatrix();
+       }
+    }
+  }
+}
+
+void drawGlowingFaceXZ(float r) {
+  noLights(); blendMode(ADD); fill(230, 255, 0, 140); 
+  pushMatrix(); rotateX(PI/2); translate(0, 0, 0.5); ellipse(0, 0, r*2, r*2); popMatrix();
+  blendMode(BLEND);
+}
+
+void drawShearVectorsRod(color c, boolean isLeftPiece, int divisions) {
+  float step = (rodRadius * 2.0) / divisions;
+  float arrowLen = min(rodRadius * 1.5, step * 0.85);
+  float arrowRad = max(1.5, arrowLen * 0.15);
+
+  for (float y = -rodRadius + step/2; y < rodRadius; y += step) {
+    for (float z = -rodRadius + step/2; z < rodRadius; z += step) {
+      if ((y - arrowLen/2)*(y - arrowLen/2) + z*z <= (rodRadius-2)*(rodRadius-2) && 
+          (y + arrowLen/2)*(y + arrowLen/2) + z*z <= (rodRadius-2)*(rodRadius-2)) {
+        pushMatrix(); translate(0, y, z);
+        if (isLeftPiece) rotateX(PI); 
+        drawArrow(arrowLen, arrowRad, c, true);
+        popMatrix();
+      }
+    }
+  }
+}
+
+void drawShearVectorsBoltXZ(color c, boolean isTopPiece, int divisions, float r) {
+  float step = (r * 2.0) / divisions;
+  float arrowLen = min(r * 1.5, step * 0.85);
+  float arrowRad = max(1.0, arrowLen * 0.15);
+
+  for (float x = -r + step/2; x < r; x += step) {
+    for (float z = -r + step/2; z < r; z += step) {
+      if ((x - arrowLen/2)*(x - arrowLen/2) + z*z <= (r-1)*(r-1) && 
+          (x + arrowLen/2)*(x + arrowLen/2) + z*z <= (r-1)*(r-1)) {
+        pushMatrix(); translate(x, 0, z);
+        if (isTopPiece) rotateZ(PI/2); else rotateZ(-PI/2); 
+        drawArrow(arrowLen, arrowRad, c, true);
+        popMatrix();
+      }
+    }
+  }
+}
+
+void drawArrow(float len, float r, color c, boolean centered) {
+  fill(c); noStroke(); float shaftLen = len * 0.65; 
+  pushMatrix();
+  if (centered) translate(0, -len/2, 0); 
+  pushMatrix(); translate(0, shaftLen/2, 0); drawCylinder(r * 0.4, shaftLen, 16); popMatrix();
+  pushMatrix(); translate(0, shaftLen, 0); drawCone(r, len - shaftLen, 16); popMatrix();
+  popMatrix(); 
+}
+
+void drawCylinder(float r, float h, int sides) {
+  float angleStep = TWO_PI / sides;
+  beginShape(QUAD_STRIP);
+  for (int i = 0; i <= sides; i++) {
+    float a = i * angleStep; normal(cos(a), 0, sin(a)); vertex(cos(a)*r, -h/2, sin(a)*r); vertex(cos(a)*r, h/2, sin(a)*r);
+  }
+  endShape();
+  beginShape(TRIANGLE_FAN); normal(0, -1, 0); vertex(0, -h/2, 0); for (int i = 0; i <= sides; i++) vertex(cos(-i*angleStep)*r, -h/2, sin(-i*angleStep)*r); endShape();
+  beginShape(TRIANGLE_FAN); normal(0, 1, 0); vertex(0, h/2, 0); for (int i = 0; i <= sides; i++) vertex(cos(i*angleStep)*r, h/2, sin(i*angleStep)*r); endShape();
+}
+
+void drawHexCylinder(float r, float h) { drawCylinder(r, h, 6); }
+
+void drawCone(float r, float h, int sides) {
+  float angleStep = TWO_PI / sides;
+  beginShape(TRIANGLE_FAN); normal(0, 1, 0); vertex(0, h, 0); 
+  for (int i = 0; i <= sides; i++) {
+    float a = i * angleStep; float mag = sqrt(cos(a)*h*cos(a)*h + r*r + sin(a)*h*sin(a)*h);
+    normal((cos(a)*h)/mag, r/mag, (sin(a)*h)/mag); vertex(cos(a)*r, 0, sin(a)*r); 
+  }
+  endShape();
+  beginShape(TRIANGLE_FAN); normal(0, -1, 0); vertex(0, 0, 0); for (int i = 0; i <= sides; i++) vertex(cos(-i*angleStep)*r, 0, sin(-i*angleStep)*r); endShape();
+}
+
+
+// ----- UI CONTROLS & INTERACTION -----
+void mousePressed() {
+  draggingUI = false;
+  if (((state >= 1 && state <= 3) || (state >= 5 && state <= 8)) && cutSlider.isHit(mouseX, mouseY)) { cutSlider.dragging = true; draggingUI = true; }
+  if ((state == 3 || state == 4 || state == 8) && densitySlider.isHit(mouseX, mouseY)) { densitySlider.dragging = true; draggingUI = true; }
+}
+
+void mouseDragged() {
+  if (cutSlider.dragging) cutSlider.update(mouseX);
+  else if (densitySlider.dragging) densitySlider.update(mouseX);
+  else if (!draggingUI) { rotY += (mouseX - pmouseX) * 0.01; rotX -= (mouseY - pmouseY) * 0.01; }
+}
+
+void mouseReleased() {
+  cutSlider.dragging = false; densitySlider.dragging = false;
+  if (nextButton.isHit(mouseX, mouseY) && state < 12) state++;
+  if (prevButton.isHit(mouseX, mouseY) && state > 0) state--;
+  if ((state >= 2 && state <= 4) || (state >= 5 && state <= 8)) {
+    if (btnToggleLeft.isHit(mouseX, mouseY)) btnToggleLeft.toggle();
+    if (btnToggleRight.isHit(mouseX, mouseY)) btnToggleRight.toggle();
+  }
+  if (state == 3 || state == 4 || state == 8) {
+    if (btnToggleLeft.isOn && btnSumLeft.isHit(mouseX, mouseY)) btnSumLeft.toggle();
+    if (btnToggleRight.isOn && btnSumRight.isHit(mouseX, mouseY)) btnSumRight.toggle();
+  }
+}
+
+// ----- UI CLASSES -----
+class ToggleButton {
+  String label; float x, y, w, h; boolean isOn;
+  ToggleButton(String _label, float _x, float _y, float _w, float _h, boolean _state) {
+    label = _label; x = _x; y = _y; w = _w; h = _h; isOn = _state;
+  }
+  void display() {
+    fill(isOn ? color(40, 180, 80) : color(180, 60, 60));
+    stroke(255); strokeWeight(2); rectMode(CORNER); rect(x, y, w, h, 8);
+    fill(255); textAlign(CENTER, CENTER); textSize(mTextSize * 0.8); 
+    text(label, x + w/2, y + h/2 - 2); strokeWeight(1);
+  }
+  boolean isHit(float mx, float my) { return (mx >= x && mx <= x+w && my >= y && my <= y+h); }
+  void toggle() { isOn = !isOn; }
+}
+
+class Slider {
+  String label; float x, y, w, h, minVal, maxVal, val; boolean dragging = false;
+  Slider(String _label, float _x, float _y, float _w, float _h, float _min, float _max, float _start) {
+    label = _label; x = _x; y = _y; w = _w; h = _h; minVal = _min; maxVal = _max; val = _start;
+  }
+  void display() {
+    fill(220); textAlign(LEFT, BOTTOM); textSize(mTextSize * 0.9); text(label, x, y - 5);
+    fill(40, 50, 60); stroke(150); rectMode(CORNER); rect(x, y, w, h, 10);
+    float handleX = map(val, minVal, maxVal, x, x + w);
+    fill(dragging ? color(255, 220, 50) : color(220)); noStroke(); rectMode(CENTER);
+    rect(handleX, y + h/2, h * 0.8, h * 1.4, 6);
+  }
+  boolean isHit(float mx, float my) { return (mx >= x-30 && mx <= x+w+30 && my >= y-30 && my <= y+h+30); }
+  void update(float mx) { val = constrain(map(mx, x, x+w, minVal, maxVal), minVal, maxVal); }
+}
+
+class Button {
+  String label; float x, y, w, h;
+  Button(String _label, float _x, float _y, float _w, float _h) { label = _label; x = _x; y = _y; w = _w; h = _h; }
+  void display() {
+    fill(60, 130, 220); stroke(255); strokeWeight(2); rectMode(CORNER); rect(x, y, w, h, 10);
+    fill(255); textAlign(CENTER, CENTER); textSize(mTextSize); text(label, x + w/2, y + h/2 - 2); strokeWeight(1);
+  }
+  boolean isHit(float mx, float my) { return (mx >= x && mx <= x+w && my >= y && my <= y+h); }
+}
