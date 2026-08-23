@@ -1,0 +1,617 @@
+// TORSION MECHANICS MASTERCLASS VISUALIZER
+// Programmed for Android Processing (APDE)
+// Instructions: Clear your editor completely before pasting!
+// Features: 12 Interactive Screens, Mohr's Circle, Fracture Simulation, Torque Diagrams
+
+int state = 0;
+int maxStates = 12; // 12 Comprehensive Screens
+float rotX = 0, rotY = 0;
+float globalTime = 0;
+
+// Custom Sliders
+Slider twistSlider;
+Slider sliceSlider;
+
+void setup() {
+  fullScreen(P3D);
+  orientation(LANDSCAPE);
+  strokeWeight(2);
+  
+  // Slider(x, y, width, height, min, max, default, label)
+  twistSlider = new Slider(50, height - 150, 300, 20, 0, PI/1.5, PI/4, "Twist Angle");
+  sliceSlider = new Slider(50, height - 80, 300, 20, 4, 30, 10, "Grid Density");
+}
+
+void draw() {
+  background(20, 30, 50); 
+  globalTime += 0.05;
+  
+  float twistAngle = twistSlider.val;
+  int segments = (int)sliceSlider.val;
+  
+  // --- 3D RENDERING LAYER ---
+  if (state >= 6 && state <= 9 || state == 11) {
+    pushMatrix();
+    translate(width/2, height/2, -300);
+    
+    if (state == 8 || state == 9) {
+      // Multi-gear screen needs horizontal alignment
+      rotateX(rotX + PI/6);
+      rotateY(rotY + HALF_PI); 
+      translate(0, -100, 0); // Shift up to make room for 2D graph
+    } else if (state == 11) {
+      // Fracture screen
+      rotateX(rotX + PI/8);
+      rotateY(rotY - PI/4);
+    } else {
+      rotateX(rotX + PI/8);
+      rotateY(rotY - PI/6);
+    }
+    
+    lights();
+    directionalLight(255, 255, 255, 1, 1, -1);
+    ambientLight(150, 150, 150);
+    
+    if (state == 6) {
+      drawWall();
+      drawTwistedCylinder(140, 650, twistAngle, segments, true);
+    }
+    else if (state == 7) {
+      pushMatrix();
+      translate(0, -180, 0);
+      drawTwistedCylinder(100, 500, twistAngle, segments, false); 
+      popMatrix();
+      
+      pushMatrix();
+      translate(0, 180, 0);
+      drawTwistedBox(150, 150, 500, twistAngle, segments); 
+      popMatrix();
+    }
+    else if (state == 8) {
+      drawMultiGearSystem(false);
+    }
+    else if (state == 9) {
+      drawMultiGearSystem(true); // True enables the red high-stress zone
+    }
+    else if (state == 11) {
+      pushMatrix();
+      translate(0, -200, 0);
+      drawFracturedShaft(100, 600, false); // Ductile (Flat)
+      popMatrix();
+      
+      pushMatrix();
+      translate(0, 200, 0);
+      drawFracturedShaft(100, 600, true);  // Brittle (45 deg)
+      popMatrix();
+    }
+    popMatrix();
+  }
+  
+  // --- 2D UI & OVERLAY LAYER ---
+  camera(); 
+  hint(DISABLE_DEPTH_TEST);
+  
+  drawUI();
+  
+  // Screen Router
+  if (state == 0) drawIntroScreen();
+  else if (state == 1) drawStressStrainFormulas();
+  else if (state == 2) drawPMIDefinitionScreen();
+  else if (state == 3) drawSolidPMIScreen();
+  else if (state == 4) drawHollowPMIScreen();
+  else if (state == 5) drawSolidVsHollowScreen();
+  else if (state == 9) drawInternalTorqueDiagram();
+  else if (state == 10) drawMohrsCircleScreen();
+  else if (state == 11) drawFractureLabels();
+  
+  // Only show sliders on interactive twist screens
+  if (state == 6 || state == 7) {
+    twistSlider.display();
+    sliceSlider.display();
+  }
+  
+  hint(ENABLE_DEPTH_TEST);
+}
+
+// ==========================================
+// 2D SCREENS (FORMULAS, PMI, MOHR'S CIRCLE, TORQUE)
+// ==========================================
+
+void drawIntroScreen() {
+  textAlign(CENTER, CENTER);
+  fill(255, 200, 0); textSize(50);
+  text("MECHANICS OF TORSION", width/2, height/2 - 120);
+  fill(255); textSize(80);
+  text("θ = TL / GJ", width/2, height/2 - 20);
+  textSize(30); fill(180, 220, 255);
+  text("T = Torque applied   |   L = Length of Shaft", width/2, height/2 + 80);
+  text("G = Material Shear Modulus   |   J = Polar Moment of Inertia", width/2, height/2 + 130);
+}
+
+void drawStressStrainFormulas() {
+  textAlign(CENTER, CENTER);
+  float bw = 350; float bh = 150;
+  stroke(255, 200, 0); strokeWeight(4); noFill();
+  rect(width/2 - bw - 20, height/2 - bh - 20, bw, bh); 
+  rect(width/2 + 20, height/2 - bh - 20, bw, bh);      
+  rect(width/2 - bw/2, height/2 + 40, bw, bh);         
+  fill(255, 200, 0); textSize(30); noStroke();
+  text("SHEAR STRAIN", width/2 - bw/2 - 20, height/2 - bh - 40);
+  text("SHEAR STRESS", width/2 + bw/2 + 20, height/2 - bh - 40);
+  text("ANGLE OF TWIST", width/2, height/2 + 20);
+  fill(255); textSize(60);
+  text("γ = ρθ / L", width/2 - bw/2 - 20, height/2 - bh/2 - 20);
+  text("τ = Tρ / J", width/2 + bw/2 + 20, height/2 - bh/2 - 20);
+  text("θ = TL / GJ", width/2, height/2 + bh/2 + 40);
+}
+
+void drawPMIDefinitionScreen() {
+  textAlign(CENTER, CENTER);
+  fill(255, 200, 0); textSize(55);
+  text("What is Polar Moment of Inertia (J)?", width/2, height/2 - 100);
+  fill(255); textSize(35);
+  text("J is a cross-section's geometric resistance to twisting.", width/2, height/2);
+  fill(180, 220, 255); textSize(28);
+  text("It depends entirely on the SHAPE and SIZE of the shaft, not the material.\nMaterial furthest from the center axis provides the most resistance.", width/2, height/2 + 80);
+}
+
+void drawSolidPMIScreen() {
+  textAlign(CENTER, CENTER); fill(200, 220, 255); textSize(50); text("SOLID CIRCULAR SHAFT", width/2, 100);
+  float cx = width/2 - 150; float cy = height/2 + 50; float r = 150;
+  fill(255, 50, 150, 200); noStroke(); ellipse(cx, cy, r*2, r*2);
+  stroke(255); strokeWeight(4); drawDashedLine2D(cx, cy, cx + r, cy, 10, 10);
+  fill(0, 255, 0); ellipse(cx, cy, 10, 10);
+  fill(255); textSize(40); text("r", cx + r/2, cy - 25);
+  stroke(0, 255, 0); strokeWeight(6); noFill(); arc(cx, cy, r*2.4, r*2.4, PI, PI+HALF_PI);
+  fill(0, 255, 0); noStroke(); triangle(cx, cy - r*1.2 - 15, cx, cy - r*1.2 + 15, cx + 25, cy - r*1.2);
+  fill(255); textSize(60); textAlign(LEFT, CENTER); text("J = (π / 2) * r⁴", cx + 250, cy - 30);
+}
+
+void drawHollowPMIScreen() {
+  textAlign(CENTER, CENTER); fill(200, 220, 255); textSize(50); text("HOLLOW CIRCULAR SHAFT", width/2, 100);
+  float cx = width/2 - 200; float cy = height/2 + 50; float r_o = 150; float r_i = 90;
+  fill(255, 50, 150, 200); noStroke(); ellipse(cx, cy, r_o*2, r_o*2);
+  fill(20, 30, 50); ellipse(cx, cy, r_i*2, r_i*2);
+  stroke(255); strokeWeight(4);
+  drawDashedLine2D(cx, cy, cx + r_o, cy, 10, 10); drawDashedLine2D(cx, cy, cx + r_i*cos(-PI/3), cy + r_i*sin(-PI/3), 10, 10);
+  fill(0, 255, 0); ellipse(cx, cy, 10, 10); 
+  fill(255); textSize(35); text("ro", cx + r_o - 20, cy - 25); text("ri", cx + 45, cy - 45);
+  stroke(0, 255, 0); strokeWeight(6); noFill(); arc(cx, cy, r_o*2.4, r_o*2.4, PI, PI+HALF_PI);
+  fill(0, 255, 0); noStroke(); triangle(cx, cy - r_o*1.2 - 15, cx, cy - r_o*1.2 + 15, cx + 25, cy - r_o*1.2);
+  fill(255); textSize(60); textAlign(LEFT, CENTER); text("J = (π / 2) * (ro⁴ - ri⁴)", cx + 250, cy);
+}
+
+void drawSolidVsHollowScreen() {
+  textAlign(CENTER, CENTER); fill(255, 200, 0); textSize(50); text("WHY USE HOLLOW SHAFTS?", width/2, 80);
+  fill(255); textSize(28);
+  text("Shear stress (τ) is zero at the center and maximum at the outer edge.\nMaterial in the center of a solid shaft is heavy but does very little work.", width/2, 160);
+  float cy = height/2 + 80;
+  fill(100); ellipse(width/3, cy, 180, 180); noFill(); stroke(255, 50, 150); strokeWeight(10); ellipse(width/3, cy, 170, 170);
+  noStroke(); fill(100); ellipse(2*width/3, cy, 240, 240); fill(20, 30, 50); ellipse(2*width/3, cy, 190, 190);
+  noFill(); stroke(255, 50, 150); strokeWeight(10); ellipse(2*width/3, cy, 230, 230);
+  fill(255); noStroke(); textSize(25);
+  text("SOLID SHAFT\nLower J, Heavier", width/3, cy + 140);
+  text("HOLLOW SHAFT (Same Mass)\nMuch higher J, Lighter & Stronger", 2*width/3, cy + 140);
+}
+
+void drawInternalTorqueDiagram() {
+  // Overlaid 2D Graph matching the 3D shaft
+  float graphY = height - 200;
+  float graphHeight = 100;
+  
+  // Coordinate Mapping matching 3D Gear locations
+  // 3D coords: A=-200, B=0, C=200 on Z axis. Mapped to screen X:
+  float xA = width/2 - 200;
+  float xB = width/2;
+  float xC = width/2 + 200;
+  
+  // Draw Graph Axes
+  stroke(255); strokeWeight(4);
+  line(xA - 150, graphY, xC + 150, graphY); // X Axis
+  line(xA - 150, graphY + graphHeight, xA - 150, graphY - graphHeight - 50); // Y Axis
+  drawArrow2D(xA - 150, graphY - graphHeight - 50, -HALF_PI); // Y Arrow
+  
+  fill(255); textSize(25); textAlign(RIGHT, CENTER);
+  text("Internal\nTorque (T)", xA - 170, graphY - 50);
+  
+  // Draw Guidelines from Gears down to graph
+  stroke(255, 255, 255, 100); strokeWeight(2);
+  drawDashedLine2D(xA, graphY + 50, xA, 250, 10, 10);
+  drawDashedLine2D(xB, graphY + 50, xB, 250, 10, 10);
+  drawDashedLine2D(xC, graphY + 50, xC, 250, 10, 10);
+  
+  // Draw the Internal Torque Step Line
+  stroke(255, 50, 150); strokeWeight(6);
+  // Wall to A (0 Torque)
+  line(xA - 150, graphY, xA, graphY);
+  // Jump up at A
+  line(xA, graphY, xA, graphY - graphHeight);
+  // A to B (Max Constant Torque)
+  line(xA, graphY - graphHeight, xB, graphY - graphHeight);
+  // Drop at B to negative torque
+  line(xB, graphY - graphHeight, xB, graphY + graphHeight/2);
+  // B to C (Lower negative torque)
+  line(xB, graphY + graphHeight/2, xC, graphY + graphHeight/2);
+  // Jump back to 0 at C
+  line(xC, graphY + graphHeight/2, xC, graphY);
+  // C to end
+  line(xC, graphY, xC + 150, graphY);
+  
+  // Highlight Dots
+  fill(255, 50, 150); noStroke();
+  ellipse(xA, graphY - graphHeight, 16, 16);
+  ellipse(xB, graphY - graphHeight, 16, 16);
+  ellipse(xB, graphY + graphHeight/2, 16, 16);
+  ellipse(xC, graphY + graphHeight/2, 16, 16);
+  
+  // Annotation
+  fill(255); textAlign(CENTER, CENTER); textSize(22);
+  text("Maximum Shear Stress\noccurs here", (xA+xB)/2, graphY - graphHeight - 40);
+  stroke(255); strokeWeight(2); line((xA+xB)/2, graphY - graphHeight - 20, (xA+xB)/2, graphY - graphHeight + 10);
+}
+
+void drawMohrsCircleScreen() {
+  // Split Screen: Left (Shaft/Elements), Right (Mohr's Circle)
+  
+  // --- LEFT SIDE (Cylinders) ---
+  float leftX = width/3 - 100;
+  
+  // Top Cylinder (Pure Shear)
+  fill(40, 120, 220); stroke(255, 100); strokeWeight(2);
+  rect(leftX - 250, height/3 - 80, 500, 160, 20); // Pseudo-Cylinder
+  
+  // Pure Shear Element (Square)
+  fill(255, 200, 0); noStroke();
+  rect(leftX - 60, height/3 - 60, 120, 120);
+  // Shear Arrows
+  stroke(255); strokeWeight(4);
+  drawArrow2D(leftX - 75, height/3 + 40, -HALF_PI); // Left up
+  drawArrow2D(leftX + 75, height/3 - 40, HALF_PI);  // Right down
+  drawArrow2D(leftX - 40, height/3 - 75, 0);        // Top right
+  drawArrow2D(leftX + 40, height/3 + 75, PI);       // Bottom left
+  fill(150, 255, 200); textSize(25); text("Pure Shear State (τ)", leftX, height/3 - 100);
+  
+  // Bottom Cylinder (Principal Stresses)
+  fill(40, 120, 220); stroke(255, 100); strokeWeight(2);
+  rect(leftX - 250, 2*height/3 - 80, 500, 160, 20); 
+  
+  // Principal Stress Element (Diamond)
+  pushMatrix();
+  translate(leftX, 2*height/3);
+  rotate(PI/4); // 45 Degrees
+  fill(255, 200, 0); noStroke();
+  rect(-60, -60, 120, 120);
+  popMatrix();
+  // Normal Arrows
+  stroke(255); strokeWeight(4);
+  drawArrow2D(leftX + 80, 2*height/3 - 80, -PI/4); // TopRight Tension
+  drawArrow2D(leftX - 80, 2*height/3 + 80, 3*PI/4); // BottomLeft Tension
+  drawArrow2D(leftX - 80, 2*height/3 - 80, PI/4); // TopLeft Comp (pushing in)
+  drawArrow2D(leftX + 80, 2*height/3 + 80, -3*PI/4); // BottomRight Comp
+  fill(255, 200, 100); textSize(25); text("Rotated 45°: Principal Stresses (σ1, σ2)", leftX, 2*height/3 - 110);
+  
+  // --- RIGHT SIDE (Mohr's Circle) ---
+  float cx = 2*width/3 + 100;
+  float cy = height/2;
+  float R = 200;
+  
+  // Axes
+  stroke(255); strokeWeight(4);
+  line(cx - R - 100, cy, cx + R + 100, cy); // Normal Stress (Sigma)
+  drawArrow2D(cx + R + 100, cy, 0);
+  fill(255); textSize(35); text("σ", cx + R + 120, cy);
+  
+  line(cx, cy - R - 100, cx, cy + R + 100); // Shear Stress (Tau) - Positive Downward
+  drawArrow2D(cx, cy + R + 100, HALF_PI);
+  text("τ", cx - 30, cy + R + 100);
+  
+  // Circle
+  stroke(255, 50, 100); strokeWeight(8); noFill();
+  ellipse(cx, cy, R*2, R*2);
+  
+  // Points
+  fill(150, 255, 200); noStroke(); // Shear points
+  ellipse(cx, cy - R, 20, 20); text("(0, -τ_xy)", cx + 80, cy - R);
+  ellipse(cx, cy + R, 20, 20); text("(0, τ_xy)", cx + 80, cy + R);
+  
+  fill(255, 200, 100); // Normal points
+  ellipse(cx + R, cy, 20, 20); text("(σ1, 0)", cx + R + 70, cy - 30);
+  ellipse(cx - R, cy, 20, 20); text("(σ2, 0)", cx - R - 70, cy - 30);
+  
+  // Connecting visual logic
+  stroke(150, 255, 200); strokeWeight(4);
+  drawDashedLine2D(leftX + 260, height/3, cx, cy + R, 15, 15);
+  stroke(255, 200, 100);
+  drawDashedLine2D(leftX + 260, 2*height/3, cx + R, cy, 15, 15);
+}
+
+void drawFractureLabels() {
+  fill(255, 200, 0); textSize(45); textAlign(CENTER, CENTER);
+  text("DUCTILE MATERIAL", width/2, height/2 - 320);
+  text("BRITTLE MATERIAL", width/2, height/2 + 80);
+  
+  fill(255); textSize(25);
+  text("Fails along plane of Maximum Shear Stress (Flat cut)", width/2, height/2 - 270);
+  text("Fails along plane of Maximum Principal Tensile Stress (45° Helical cut)", width/2, height/2 + 130);
+  
+  // Add rotational torque arrows in 2D to overlay the 3D models
+  stroke(0, 255, 100); strokeWeight(8); noFill();
+  
+  // Ductile arrows
+  arc(width/2 - 380, height/2 - 200, 80, 150, HALF_PI, PI+HALF_PI);
+  drawArrow2D(width/2 - 380, height/2 - 125, HALF_PI);
+  arc(width/2 + 380, height/2 - 200, 80, 150, -HALF_PI, HALF_PI);
+  drawArrow2D(width/2 + 380, height/2 - 275, -HALF_PI);
+  
+  // Brittle arrows
+  arc(width/2 - 380, height/2 + 200, 80, 150, HALF_PI, PI+HALF_PI);
+  drawArrow2D(width/2 - 380, height/2 + 275, HALF_PI);
+  arc(width/2 + 380, height/2 + 200, 80, 150, -HALF_PI, HALF_PI);
+  drawArrow2D(width/2 + 380, height/2 + 125, -HALF_PI);
+}
+
+
+// ==========================================
+// 3D RENDERING FUNCTIONS 
+// ==========================================
+
+void drawWall() {
+  pushMatrix(); fill(150); stroke(100); strokeWeight(2); translate(0, 0, -10); box(400, 400, 20); popMatrix();
+}
+
+void drawTwistedCylinder(float r, float l, float maxTwist, int segments, boolean showPatch) {
+  int sides = 36; float segLength = l / segments;
+  int patch_i = segments / 2; int patch_j = 0; 
+  float cx=0, cy=0, cz=0, dx=0, dy=0, dz=0; float fx=0, fy=0, fz=0, ex=0, ey=0, ez=0;
+
+  for (int i = 0; i < segments; i++) {
+    float z1 = i * segLength; float z2 = (i+1) * segLength;
+    float t1 = map(z1, 0, l, 0, maxTwist); float t2 = map(z2, 0, l, 0, maxTwist);
+    
+    beginShape(QUADS);
+    for (int j = 0; j < sides; j++) {
+      float a1 = TWO_PI / sides * j; float a2 = TWO_PI / sides * (j+1);
+      boolean isPatch = (showPatch && i == patch_i && j == patch_j);
+      
+      if (isPatch) { fill(255, 220, 0); stroke(255, 200, 0); strokeWeight(4); } 
+      else { fill(40, 120, 220); stroke(255, 80); strokeWeight(1); }
+      
+      float v1x = r*cos(a1+t1), v1y = r*sin(a1+t1), v1z = z1;
+      float v2x = r*cos(a2+t1), v2y = r*sin(a2+t1), v2z = z1;
+      float v3x = r*cos(a2+t2), v3y = r*sin(a2+t2), v3z = z2;
+      float v4x = r*cos(a1+t2), v4y = r*sin(a1+t2), v4z = z2;
+      
+      vertex(v1x, v1y, v1z); vertex(v2x, v2y, v2z); vertex(v3x, v3y, v3z); vertex(v4x, v4y, v4z);
+      if (isPatch) { cx=v1x;cy=v1y;cz=v1z; fx=v2x;fy=v2y;fz=v2z; dx=v4x;dy=v4y;dz=v4z; ex=v3x;ey=v3y;ez=v3z; }
+    }
+    endShape();
+  }
+  
+  fill(220, 50, 50); noStroke(); beginShape(TRIANGLE_FAN); vertex(0, 0, l);
+  for(int j=0; j<=sides; j++) vertex(r*cos(TWO_PI/sides*j + maxTwist), r*sin(TWO_PI/sides*j + maxTwist), l);
+  endShape();
+  
+  if (showPatch) {
+    float u_z1 = patch_i * segLength; float u_z2 = (patch_i+1) * segLength;
+    float a1 = 0; float a2 = TWO_PI / sides;
+    
+    stroke(255, 255, 255, 180); strokeWeight(3); noFill(); beginShape();
+    vertex(r*cos(a1), r*sin(a1), u_z1); vertex(r*cos(a2), r*sin(a2), u_z1);
+    vertex(r*cos(a2), r*sin(a2), u_z2); vertex(r*cos(a1), r*sin(a1), u_z2); endShape(CLOSE);
+
+    strokeWeight(3); stroke(255, 255, 255, 180); drawDashedLine3D(r, 0, 0, r, 0, l, 15, 10);
+    strokeWeight(4); stroke(255, 100, 100); 
+    float ptX_last = r, ptY_last = 0, ptZ_last = 0;
+    for(int i=1; i<=segments; i++) {
+      float z = i * segLength; float t = map(z, 0, l, 0, maxTwist);
+      float ptX = r*cos(t); float ptY = r*sin(t);
+      line(ptX_last, ptY_last, ptZ_last, ptX, ptY, z);
+      ptX_last = ptX; ptY_last = ptY; ptZ_last = z;
+    }
+    
+    fill(255); textSize(28); textAlign(CENTER, CENTER); float off = 1.15;
+    text("C", cx*off, cy*off, cz); text("F", fx*off, fy*off, fz);
+    if (maxTwist > 0.05) { fill(255, 200, 0); text("D'", dx*off, dy*off, dz); text("E'", ex*off, ey*off, ez); fill(255, 100, 100); text("B'", r*cos(maxTwist)*off, r*sin(maxTwist)*off, l); } 
+    else { fill(255); text("D", dx*off, dy*off, dz); text("E", ex*off, ey*off, ez); }
+    fill(255); text("B", r*off, 0, l);
+  }
+}
+
+void drawTwistedBox(float w, float ht, float l, float maxTwist, int segments) {
+  float segLength = l / segments; fill(40, 120, 220); stroke(255, 100); float warpFactor = 0.005; 
+  for(int i=0; i<segments; i++) {
+    float z1 = i * segLength; float z2 = (i+1) * segLength;
+    float t1 = map(z1, 0, l, 0, maxTwist); float t2 = map(z2, 0, l, 0, maxTwist);
+    float[] x = {-w/2, w/2, w/2, -w/2}; float[] y = {-ht/2, -ht/2, ht/2, ht/2};
+    beginShape(QUADS);
+    for(int j=0; j<4; j++) {
+      int j2 = (j+1)%4;
+      float v1x = x[j]*cos(t1) - y[j]*sin(t1); float v1y = x[j]*sin(t1) + y[j]*cos(t1); float v1z = z1 + (warpFactor * x[j] * y[j] * t1);
+      float v2x = x[j]*cos(t2) - y[j]*sin(t2); float v2y = x[j]*sin(t2) + y[j]*cos(t2); float v2z = z2 + (warpFactor * x[j] * y[j] * t2);
+      float v3x = x[j2]*cos(t2) - y[j2]*sin(t2); float v3y = x[j2]*sin(t2) + y[j2]*cos(t2); float v3z = z2 + (warpFactor * x[j2] * y[j2] * t2);
+      float v4x = x[j2]*cos(t1) - y[j2]*sin(t1); float v4y = x[j2]*sin(t1) + y[j2]*cos(t1); float v4z = z1 + (warpFactor * x[j2] * y[j2] * t1);
+      vertex(v1x, v1y, v1z); vertex(v2x, v2y, v2z); vertex(v3x, v3y, v3z); vertex(v4x, v4y, v4z);
+    }
+    endShape();
+  }
+}
+
+void drawMultiGearSystem(boolean showStressZone) {
+  float L = 800; // Shaft length
+  
+  drawBearing(-L/2); drawBearing(L/2);
+  
+  if (showStressZone) {
+    fill(255, 50, 100, 180); noStroke();
+    drawCylinder(35, 200, -200); // Red highlight A to B
+    fill(200); drawCylinder(30, 200, -L/2); drawCylinder(30, 400, 0); 
+  } else {
+    fill(200); noStroke(); drawCylinder(30, L, -L/2);
+  }
+
+  drawToothedGear(-200, 90, 40, color(150, 160, 170)); draw3DText("A", 0, -150, -200);
+  drawToothedGear(0, 65, 40, color(200, 80, 80)); draw3DText("B", 0, -130, 0);
+  drawToothedGear(200, 90, 40, color(150, 160, 170)); draw3DText("C", 0, -150, 200);
+  
+  float anim = sin(globalTime) * 0.2;
+  drawCurvedArrow(-200, 110, -PI/2 - anim, 0 - anim, color(0, 255, 100), true);
+  drawCurvedArrow(0, 85, PI + anim, PI/2 + anim, color(0, 255, 100), false);
+  drawCurvedArrow(200, 110, -PI/2 - anim, 0 - anim, color(0, 255, 100), true);
+  
+  if (showStressZone == false) {
+    drawCurvedArrow(-100, 45, PI/2, PI, color(255, 220, 0), false);
+    draw3DText("T_internal", 0, 80, -100);
+  }
+}
+
+void drawFracturedShaft(float r, float l, boolean isBrittle) {
+  int sides = 36; float gap = 40;
+  fill(40, 120, 220); stroke(255, 80); strokeWeight(1);
+  
+  // Left Half
+  beginShape(QUAD_STRIP);
+  for(int j=0; j<=sides; j++) {
+    float a = TWO_PI/sides * j;
+    float cutZ = l/2; if(isBrittle) cutZ = l/2 + r*cos(a);
+    vertex(r*cos(a), r*sin(a), -l/2); vertex(r*cos(a), r*sin(a), cutZ - gap/2 - l/2);
+  } endShape();
+  
+  // Right Half
+  beginShape(QUAD_STRIP);
+  for(int j=0; j<=sides; j++) {
+    float a = TWO_PI/sides * j;
+    float cutZ = l/2; if(isBrittle) cutZ = l/2 + r*cos(a);
+    vertex(r*cos(a), r*sin(a), cutZ + gap/2 - l/2); vertex(r*cos(a), r*sin(a), l/2);
+  } endShape();
+
+  // Fracture Faces (Inside cuts)
+  fill(255, 80, 80); 
+  beginShape(POLYGON);
+  for(int j=0; j<=sides; j++) {
+    float a = TWO_PI/sides * j; float cutZ = l/2; if(isBrittle) cutZ = l/2 + r*cos(a);
+    vertex(r*cos(a), r*sin(a), cutZ - gap/2 - l/2);
+  } endShape();
+  
+  beginShape(POLYGON);
+  for(int j=sides; j>=0; j--) { 
+    float a = TWO_PI/sides * j; float cutZ = l/2; if(isBrittle) cutZ = l/2 + r*cos(a);
+    vertex(r*cos(a), r*sin(a), cutZ + gap/2 - l/2);
+  } endShape();
+}
+
+// 3D Geometric Helpers
+void drawCylinder(float r, float h, float zOffset) {
+  beginShape(QUAD_STRIP);
+  for(int i=0; i<=24; i++) {
+    float a = TWO_PI / 24 * i; vertex(r*cos(a), r*sin(a), zOffset); vertex(r*cos(a), r*sin(a), zOffset + h);
+  } endShape();
+}
+
+void drawToothedGear(float zCenter, float rOuter, float thickness, color c) {
+  float rInner = rOuter * 0.8; int teeth = 16;
+  fill(c); stroke(50); strokeWeight(1);
+  float z1 = zCenter - thickness/2; float z2 = zCenter + thickness/2;
+  beginShape(QUAD_STRIP);
+  for(int i=0; i<=teeth*2; i++) {
+    float a = TWO_PI / (teeth*2) * i; float r = (i%2==0) ? rOuter : rInner;
+    vertex(r*cos(a), r*sin(a), z1); vertex(r*cos(a), r*sin(a), z2);
+  } endShape();
+  beginShape(TRIANGLE_FAN); vertex(0,0,z1); for(int i=0; i<=teeth*2; i++) vertex(((i%2==0)?rOuter:rInner)*cos(TWO_PI/(teeth*2)*i), ((i%2==0)?rOuter:rInner)*sin(TWO_PI/(teeth*2)*i), z1); endShape();
+  beginShape(TRIANGLE_FAN); vertex(0,0,z2); for(int i=0; i<=teeth*2; i++) vertex(((i%2==0)?rOuter:rInner)*cos(TWO_PI/(teeth*2)*i), ((i%2==0)?rOuter:rInner)*sin(TWO_PI/(teeth*2)*i), z2); endShape();
+}
+
+void drawBearing(float z) {
+  pushMatrix(); translate(0, 60, z); fill(50, 200, 180); noStroke(); box(120, 100, 60);
+  translate(0, -50, 0); rotateY(HALF_PI); drawCylinder(60, 60, -30); popMatrix();
+}
+
+void drawCurvedArrow(float z, float r, float startAng, float endAng, color c, boolean headAtEnd) {
+  fill(c); noStroke(); float w = 12;
+  beginShape(QUAD_STRIP);
+  for(int i=0; i<=15; i++) {
+    float t = map(i, 0, 15, startAng, endAng); vertex((r-w/2)*cos(t), (r-w/2)*sin(t), z); vertex((r+w/2)*cos(t), (r+w/2)*sin(t), z);
+  } endShape();
+  float headAng = headAtEnd ? endAng : startAng;
+  pushMatrix(); translate(r*cos(headAng), r*sin(headAng), z); rotateZ(headAng + (headAtEnd ? HALF_PI : -HALF_PI));
+  beginShape(TRIANGLES); vertex(-25, 0, 0); vertex(25, 0, 0); vertex(0, -30, 0); endShape(); popMatrix();
+}
+
+void draw3DText(String txt, float x, float y, float z) {
+  pushMatrix(); translate(x, y, z); rotateX(-PI/4); rotateY(-PI/4); fill(255); textSize(45); textAlign(CENTER, CENTER); text(txt, 0, 0); popMatrix();
+}
+
+
+// ==========================================
+// 2D UTILITIES & INTERACTION
+// ==========================================
+void drawArrow2D(float x, float y, float angle) {
+  pushMatrix(); translate(x, y); rotate(angle); line(0, 0, 30, 0);
+  fill(255); noStroke(); triangle(30, 0, 15, -8, 15, 8); popMatrix();
+}
+
+void drawDashedLine2D(float x1, float y1, float x2, float y2, float dash, float gap) {
+  float distance = dist(x1, y1, x2, y2); float dx = (x2-x1)/distance; float dy = (y2-y1)/distance;
+  float curr = 0; boolean draw = true; float sX = x1, sY = y1;
+  while (curr < distance) {
+    float step = draw ? dash : gap; if (curr + step > distance) step = distance - curr;
+    if (draw) line(sX, sY, sX + dx*step, sY + dy*step);
+    sX += dx*step; sY += dy*step; curr += step; draw = !draw;
+  }
+}
+
+void drawDashedLine3D(float x1, float y1, float z1, float x2, float y2, float z2, float dash, float gap) {
+  float d = dist(x1, y1, z1, x2, y2, z2); float dx=(x2-x1)/d; float dy=(y2-y1)/d; float dz=(z2-z1)/d;
+  float curr = 0; boolean draw = true; float sX = x1, sY = y1, sZ = z1;
+  while (curr < d) {
+    float step = draw ? dash : gap; if (curr + step > d) step = d - curr;
+    if (draw) line(sX, sY, sZ, sX+dx*step, sY+dy*step, sZ+dz*step);
+    sX+=dx*step; sY+=dy*step; sZ+=dz*step; curr += step; draw = !draw;
+  }
+}
+
+void drawUI() {
+  textAlign(CENTER, CENTER); fill(255, 200, 0); textSize(35);
+  String[] titles = {
+    "", "SHEAR STRAIN, STRESS, & TWIST FORMULAS", "", "", "", "", 
+    "ELEMENT PATCH: Before & After Torsion", "WARPING: Circular vs Square", 
+    "MULTI-GEAR: Internal Resisting Torque", "INTERNAL TORQUE DIAGRAM (Max Shear Stress)",
+    "MOHR'S CIRCLE: Pure Shear vs Principal Stress", "MATERIAL FAILURE: Ductile vs Brittle"
+  };
+  text(titles[state], width/2, 50);
+  
+  fill(255, 150); textSize(20); text("Screen " + (state + 1) + " of " + maxStates, width/2, height - 30);
+  
+  if (state > 0) { fill(50, 150, 100); rect(width - 350, 30, 150, 60, 10); fill(255); textSize(25); text("PREV", width - 275, 60); }
+  if (state < maxStates - 1) { fill(50, 150, 100); rect(width - 180, 30, 150, 60, 10); fill(255); textSize(25); text("NEXT", width - 105, 60); }
+}
+
+class Slider {
+  float x, y, w, h, minVal, maxVal, val; String label; boolean dragging = false;
+  Slider(float x, float y, float w, float h, float minVal, float maxVal, float defaultVal, String label) {
+    this.x = x; this.y = y; this.w = w; this.h = h; this.minVal = minVal; this.maxVal = maxVal; this.val = defaultVal; this.label = label;
+  }
+  void display() {
+    fill(100); rect(x, y, w, h, 10); float thumbX = map(val, minVal, maxVal, x, x + w);
+    fill(255, 100, 100); ellipse(thumbX, y + h/2, h*2.5, h*2.5); fill(255); textAlign(LEFT, CENTER); textSize(25);
+    text(label + ": " + ((maxVal > 10) ? String.valueOf((int)val) : nf(val, 1, 2)), x + w + 30, y + h/2);
+  }
+  void update(float mx) { if (dragging) val = map(constrain(mx, x, x + w), x, x + w, minVal, maxVal); }
+  void checkPressed(float mx, float my) { if (mx > x - h*2 && mx < x + w + h*2 && my > y - h*2 && my < y + h*3) dragging = true; }
+  void checkReleased() { dragging = false; }
+}
+
+void mousePressed() {
+  if (mouseY > 30 && mouseY < 90) {
+    if (mouseX > width - 180 && mouseX < width - 30 && state < maxStates - 1) { state++; twistSlider.val = 0; }
+    if (mouseX > width - 350 && mouseX < width - 200 && state > 0) state--;
+  }
+  if (state == 6 || state == 7) { twistSlider.checkPressed(mouseX, mouseY); sliceSlider.checkPressed(mouseX, mouseY); }
+}
+
+void mouseDragged() {
+  if (twistSlider.dragging) twistSlider.update(mouseX);
+  else if (sliceSlider.dragging) sliceSlider.update(mouseX);
+  else if (state >= 6) { rotX += (mouseY - pmouseY) * 0.01; rotY -= (mouseX - pmouseX) * 0.01; }
+}
+
+void mouseReleased() { twistSlider.checkReleased(); sliceSlider.checkReleased(); }
