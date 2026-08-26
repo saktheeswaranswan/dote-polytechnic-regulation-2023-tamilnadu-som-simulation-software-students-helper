@@ -1,0 +1,351 @@
+// Spring Test 3D Simulation with Accumulating Table & Results
+// Full code from beginning to end
+
+// Application States:
+// 0 = 3D Machine Simulation
+// 1 = Current Calculation Screen
+// 2 = Accumulated Table Screen
+// 3 = Final Results Screen
+int appState = 0; 
+
+float handleAngle = 0;
+int currentStep = 0;
+boolean isTesting = false;
+boolean[] testedLoads = new boolean[6]; // Tracks which weights have been tested
+
+// Data perfectly matched to your handwritten tabulation sheet
+float[] loads = {0, 10, 15, 20, 25, 30}; 
+float[] forceN = {0, 98.1, 147.15, 196.2, 245.25, 294.3};
+float[] deflections = {0, 30, 41, 55, 69, 83}; 
+String[] gValues = {"0", "1336.70", "2005.05", "1458.22", "1452.94", "1449.44"};
+String[] kValues = {"0", "3.27", "3.58", "3.56", "3.55", "3.54"};
+
+float currentDeflection = 0;
+float targetDeflection = 0;
+
+void setup() {
+  size(displayWidth, displayHeight, P3D); // Use full screen for APDE
+  smooth();
+  testedLoads[0] = true; // 0 kg is default
+}
+
+void draw() {
+  if (appState == 0) {
+    draw3DSimulation();
+  } else if (appState == 1) {
+    drawCalculationScreen();
+  } else if (appState == 2) {
+    drawTableScreen();
+  } else if (appState == 3) {
+    drawResultScreen();
+  }
+}
+
+// ==========================================
+// STATE 0: MAIN 3D SIMULATION SCREEN
+// ==========================================
+void draw3DSimulation() {
+  background(220, 230, 240);
+  lights();
+  directionalLight(200, 200, 200, -1, 1, -1);
+  
+  // Handle Animation Logic (Stretching & Compressing)
+  if (abs(currentDeflection - targetDeflection) > 0.5) {
+    isTesting = true;
+    if (currentDeflection < targetDeflection) {
+      currentDeflection += 0.5; // Stretch down
+      handleAngle += 0.2;       
+    } else {
+      currentDeflection -= 0.5; // Compress up
+      handleAngle -= 0.2;
+    }
+  } else {
+    currentDeflection = targetDeflection; // Snap to exact value
+    isTesting = false;
+  }
+
+  // Set up 3D Camera view - Shifted left to make room for UI
+  pushMatrix();
+  translate(width/2 - 150, height/2 + 150, -200);
+  rotateY(map(mouseX, 0, width, -PI/6, PI/6)); 
+  rotateX(-0.05); 
+
+  drawMachine();
+  drawStickMan();
+  popMatrix();
+  
+  drawDigitalUI();
+}
+
+void drawMachine() {
+  fill(200);
+  noStroke();
+  
+  // Base of the machine
+  pushMatrix(); translate(0, 0, 0); box(250, 100, 200); popMatrix();
+  
+  // Display screen on the base
+  pushMatrix();
+  translate(0, 0, 101);
+  fill(10); box(100, 40, 5);
+  fill(255, 0, 0); textSize(24); textAlign(CENTER, CENTER);
+  text(loads[currentStep] + " Kgf", 0, 0, 2);
+  popMatrix();
+  
+  // Vertical Pillars
+  fill(150);
+  pushMatrix(); translate(-80, -200, 0); box(20, 300, 20); popMatrix();
+  pushMatrix(); translate(80, -200, 0); box(20, 300, 20); popMatrix();
+  
+  // Fixed Top Plate & Moving Crosshead
+  pushMatrix(); translate(0, -360, 0); box(220, 20, 80); popMatrix();
+  
+  float crossheadY = -280 + currentDeflection;
+  pushMatrix(); translate(0, crossheadY, 0); fill(180, 180, 200); box(180, 15, 60); popMatrix();
+  
+  // Top Handle Mechanism
+  pushMatrix();
+  translate(0, -390, 0);
+  rotateY(handleAngle); 
+  fill(100); box(30, 40, 30); 
+  fill(200); box(160, 10, 10); 
+  popMatrix();
+  
+  // Threaded rod
+  pushMatrix(); translate(0, -320 + (currentDeflection/2), 0); fill(50); box(15, 120 + currentDeflection, 15); popMatrix();
+  
+  drawSpring(crossheadY);
+}
+
+void drawSpring(float topY) {
+  float bottomY = -50; 
+  float springLength = bottomY - topY;
+  int coils = 15;
+  noFill(); stroke(30); strokeWeight(6);
+  pushMatrix(); translate(0, topY, 0);
+  beginShape();
+  for (int i = 0; i <= coils * 360; i += 10) {
+    float theta = radians(i);
+    float x = 25 * cos(theta);
+    float z = 25 * sin(theta);
+    float y = map(i, 0, coils * 360, 0, springLength); 
+    vertex(x, y, z);
+  }
+  endShape();
+  popMatrix(); noStroke();
+}
+
+void drawStickMan() {
+  pushMatrix();
+  translate(180, -100, 50); 
+  stroke(0); strokeWeight(8);
+  
+  line(0, -100, 0, 50); // Body
+  fill(255, 200, 150); pushMatrix(); translate(0, -130, 0); sphere(30); popMatrix(); // Head
+  line(0, 50, -30, 150); line(0, 50, 30, 150); // Legs
+  
+  float armReachX = -100, armReachY = -280;
+  float armZOffset = isTesting ? 40 * sin(handleAngle) : 0; 
+  
+  line(0, -80, 0, armReachX, armReachY, armZOffset - 20); // Left Arm
+  line(0, -80, 0, armReachX, armReachY, armZOffset + 20); // Right Arm
+  noStroke(); popMatrix();
+}
+
+void drawDigitalUI() {
+  hint(DISABLE_DEPTH_TEST); camera(); noLights();
+  
+  float panelW = 320;
+  float startX = width - panelW - 20; 
+  float startY = 40;
+  
+  // Main Digital Panel
+  fill(15, 0, 0); stroke(100, 0, 0); strokeWeight(4); rect(startX, startY, panelW, 460, 15);
+  fill(255, 50, 50); textSize(24); textAlign(CENTER, TOP); text("SELECT LOAD", startX + panelW/2, startY + 15);
+  
+  for(int i = 1; i < loads.length; i++) {
+    float rowY = startY + 60 + (i-1)*75;
+    
+    // Check mark if already tested
+    if(testedLoads[i]) { fill(0, 255, 0); textSize(20); text("✓", startX + 35, rowY + 25); }
+    
+    if (i == currentStep) { fill(80, 0, 0); stroke(255, 100, 100); } 
+    else { fill(20, 0, 0); stroke(150, 0, 0); }
+    
+    strokeWeight(2); rect(startX + 60, rowY, panelW - 80, 55, 5);
+    
+    fill(255, 0, 0); textSize(32); textAlign(CENTER, CENTER);
+    text(loads[i] + " Kgf", startX + 60 + (panelW-80)/2, rowY + 25);
+  }
+  
+  // NEXT Button
+  if (!isTesting && currentStep > 0 && currentDeflection == targetDeflection) {
+    fill(0, 150, 50); stroke(0, 200, 50); rect(startX, startY + 480, panelW, 70, 10);
+    fill(255); textSize(28); text("NEXT: VIEW CALC", startX + panelW/2, startY + 480 + 32);
+  }
+  
+  // Title
+  fill(0, 150); noStroke(); rect(0, 0, 450, 60);
+  fill(255); textAlign(LEFT, CENTER); textSize(28); text("Spring Test 3D Simulator", 20, 30);
+  
+  hint(ENABLE_DEPTH_TEST);
+}
+
+// ==========================================
+// STATE 1: CURRENT CALCULATION SCREEN
+// ==========================================
+void drawCalculationScreen() {
+  background(245, 245, 240); hint(DISABLE_DEPTH_TEST); camera(); noLights();
+  
+  float w = loads[currentStep]; float d = deflections[currentStep]; float fn = forceN[currentStep];
+  
+  fill(0); textAlign(LEFT, TOP); textSize(40);
+  text("Calculations for " + w + " Kgf Load", 50, 40);
+  stroke(0); strokeWeight(2); line(50, 95, 600, 95);
+  
+  textSize(32); fill(40);
+  text("1) Stiffness (k) = W / δ", 50, 130);
+  fill(0, 0, 150);
+  text("   Load (W) = " + w + " * 9.81 = " + fn + " N", 50, 180);
+  text("   Deflection (δ) = " + d + " mm", 50, 230);
+  text("   k = " + fn + " / " + d, 50, 280);
+  fill(150, 0, 0);
+  text("   k = " + kValues[currentStep] + " N/mm", 50, 330);
+  
+  fill(40);
+  text("2) Rigidity Modulus (G) formula: (8 * W * D³ * n) / (δ * d⁴)", 50, 420);
+  fill(0, 0, 150);
+  text("   G = (8 * " + w + " * 17.25³ * 25) / (" + d + " * 4⁴)", 50, 470);
+  fill(150, 0, 0);
+  text("   G = " + gValues[currentStep] + " N/mm²", 50, 520);
+  
+  drawNavButtons("VIEW ACCUMULATED TABLE", 2);
+  hint(ENABLE_DEPTH_TEST);
+}
+
+// ==========================================
+// STATE 2: ACCUMULATED TABLE SCREEN
+// ==========================================
+void drawTableScreen() {
+  background(245, 245, 240); hint(DISABLE_DEPTH_TEST); camera(); noLights();
+  
+  fill(0); textAlign(LEFT, TOP); textSize(40);
+  text("Tabulation: Load versus Deflection", 50, 40);
+  
+  // Table Headers
+  stroke(0); strokeWeight(2); fill(220);
+  float[] cols = {50, 150, 300, 450, 700, 850};
+  float startY = 120; float rowH = 60;
+  
+  for(int i=0; i<5; i++) { rect(cols[i], startY, cols[i+1]-cols[i], rowH); }
+  
+  fill(0); textSize(20); textAlign(CENTER, CENTER);
+  text("S.No", cols[0]+(cols[1]-cols[0])/2, startY + rowH/2);
+  text("Load (W)\nKgf", cols[1]+(cols[2]-cols[1])/2, startY + rowH/2);
+  text("Deflection (δ)\nmm", cols[2]+(cols[3]-cols[2])/2, startY + rowH/2);
+  text("Rigidity Mod (G)\nN/mm²", cols[3]+(cols[4]-cols[3])/2, startY + rowH/2);
+  text("Stiffness (k)\nN/mm", cols[4]+(cols[5]-cols[4])/2, startY + rowH/2);
+  
+  // Table Rows
+  textSize(24);
+  for(int i=1; i<=5; i++) {
+    float y = startY + (i * rowH);
+    for(int j=0; j<5; j++) {
+      fill(255); stroke(0); rect(cols[j], y, cols[j+1]-cols[j], rowH);
+    }
+    
+    // Only draw values if this step has been tested
+    if (testedLoads[i]) {
+      fill(0, 0, 150); // Pen blue color
+      text(i, cols[0]+(cols[1]-cols[0])/2, y + rowH/2);
+      text(loads[i] + " (" + forceN[i] + " N)", cols[1]+(cols[2]-cols[1])/2, y + rowH/2);
+      text(deflections[i], cols[2]+(cols[3]-cols[2])/2, y + rowH/2);
+      text(gValues[i], cols[3]+(cols[4]-cols[3])/2, y + rowH/2);
+      text(kValues[i], cols[4]+(cols[5]-cols[4])/2, y + rowH/2);
+    }
+  }
+  
+  drawNavButtons("VIEW FINAL RESULTS", 3);
+  hint(ENABLE_DEPTH_TEST);
+}
+
+// ==========================================
+// STATE 3: FINAL RESULTS SCREEN
+// ==========================================
+void drawResultScreen() {
+  background(245, 245, 240); hint(DISABLE_DEPTH_TEST); camera(); noLights();
+  
+  fill(0); textAlign(LEFT, TOP); textSize(45);
+  text("Result:", 50, 40); stroke(0); strokeWeight(2); line(50, 95, 200, 95);
+  
+  textSize(32); fill(0, 0, 150); // Pen blue
+  text("k = W / δ (N/mm)", 50, 120);
+  
+  int yOffset = 180;
+  String[] ordinals = {"", "1st reading = ", "2nd reading = ", "3rd reading = ", "4th reading = ", "5th reading = "};
+  
+  for(int i=1; i<=5; i++) {
+    if(testedLoads[i]) {
+      text(ordinals[i] + forceN[i] + " / " + deflections[i] + " = " + kValues[i] + " N/mm", 50, yOffset);
+      yOffset += 50;
+    }
+  }
+  
+  drawNavButtons("FINISH / RESTART", 0);
+  hint(ENABLE_DEPTH_TEST);
+}
+
+// ==========================================
+// UTILITY: DRAW NAVIGATION BUTTONS
+// ==========================================
+void drawNavButtons(String nextText, int nextState) {
+  // Back to Machine Button
+  fill(200, 50, 50); noStroke(); rect(width - 250, 40, 200, 60, 10);
+  fill(255); textSize(24); textAlign(CENTER, CENTER); text("← BACK TO LAB", width - 150, 70);
+  
+  // Next Action Button
+  fill(0, 150, 50); noStroke(); rect(width - 400, height - 100, 350, 70, 10);
+  fill(255); textSize(24); text(nextText + " →", width - 225, height - 65);
+}
+
+// ==========================================
+// MOUSE INTERACTION LOGIC
+// ==========================================
+void mousePressed() {
+  if (appState == 0) {
+    // Check Digital Table Row clicks
+    float panelW = 320; float startX = width - panelW - 20; float startY = 40;
+    if (!isTesting) {
+      for(int i = 1; i < loads.length; i++) {
+        float rowY = startY + 60 + (i-1)*75;
+        if (mouseX > startX + 60 && mouseX < startX + panelW - 20 && mouseY > rowY && mouseY < rowY + 55) {
+           currentStep = i;
+           targetDeflection = deflections[i];
+           testedLoads[i] = true; // Mark as tested so it appears in the table!
+        }
+      }
+      // Check NEXT Button click
+      if (currentStep > 0 && currentDeflection == targetDeflection) {
+        if (mouseX > startX && mouseX < startX + panelW && mouseY > startY + 480 && mouseY < startY + 550) {
+          appState = 1;
+        }
+      }
+    }
+  } else {
+    // Navigation for States 1, 2, and 3
+    // Check "BACK TO LAB" button
+    if (mouseX > width - 250 && mouseX < width - 50 && mouseY > 40 && mouseY < 100) {
+      appState = 0;
+    }
+    // Check "NEXT" button
+    if (mouseX > width - 400 && mouseX < width - 50 && mouseY > height - 100 && mouseY < height - 30) {
+      if (appState == 1) appState = 2;
+      else if (appState == 2) appState = 3;
+      else if (appState == 3) {
+        // Reset everything if user hits Finish/Restart
+        appState = 0; currentStep = 0; targetDeflection = 0; currentDeflection = 0;
+        for(int i=1; i<6; i++) testedLoads[i] = false;
+      }
+    }
+  }
+}
