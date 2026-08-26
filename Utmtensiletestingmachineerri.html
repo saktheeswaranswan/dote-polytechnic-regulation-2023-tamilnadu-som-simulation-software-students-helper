@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>UTM Tensile Test Simulation & Analysis</title>
+  
+  <!-- Load p5.js for 3D/2D Simulation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+  <!-- Load Chart.js for the Graph -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden; 
+      background-color: #dce6f0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    
+    /* --- Top Navigation Bar --- */
+    #navbar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 60px;
+      background-color: #2c3e50;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    }
+    
+    .nav-btn {
+      background: none;
+      border: none;
+      color: #ecf0f1;
+      font-size: 16px;
+      font-weight: bold;
+      padding: 15px 25px;
+      margin: 0 5px;
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+      transition: all 0.3s ease;
+    }
+    
+    .nav-btn:hover { background-color: #34495e; }
+    .nav-btn.active { border-bottom: 3px solid #3498db; color: #3498db; }
+
+    /* --- Screen Containers --- */
+    .screen {
+      display: none;
+      position: absolute;
+      top: 60px;
+      left: 0;
+      width: 100%;
+      height: calc(100vh - 60px);
+      box-sizing: border-box;
+      overflow-y: auto;
+      background: #f4f7f6;
+    }
+    
+    #screen-sim { display: block; overflow: hidden; position: relative; }
+
+    /* --- Animated HTML Buttons (Overlay on Simulation) --- */
+    .control-panel {
+      position: absolute;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      z-index: 100;
+    }
+    
+    .panel-right { bottom: 30px; right: 30px; }
+    .panel-left { bottom: 30px; left: 30px; }
+    .panel-top { top: 20px; left: 50%; transform: translateX(-50%); flex-direction: row; }
+    
+    .sim-btn {
+      padding: 15px 25px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: bold;
+      color: white;
+      cursor: pointer;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+      transition: all 0.15s ease-in-out;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    
+    /* Animation for button clicks */
+    .sim-btn:active {
+      transform: scale(0.92);
+      box-shadow: 0 2px 3px rgba(0,0,0,0.2);
+    }
+    
+    .sim-btn:hover { filter: brightness(1.1); }
+    
+    .btn-start { background-color: #27ae60; border-radius: 40px; width: 120px; height: 80px;}
+    .btn-stop { background-color: #c0392b; border-radius: 40px; width: 120px; height: 80px;}
+    .btn-up { background-color: #7f8c8d; border-radius: 40px; width: 120px; height: 80px;}
+    .btn-down { background-color: #7f8c8d; border-radius: 40px; width: 120px; height: 80px;}
+    .btn-record { background-color: #f39c12; width: 300px; padding: 20px; font-size: 18px; }
+
+    /* --- Shared Content Styles --- */
+    .content-container {
+      max-width: 900px;
+      margin: 30px auto;
+      background: #fff;
+      padding: 30px;
+      border-radius: 10px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
+    h1 { text-align: center; color: #2c3e50; margin-top: 0; }
+    
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { border: 1px solid #bdc3c7; padding: 12px; text-align: center; }
+    th { background-color: #34495e; color: white; }
+    tr:nth-child(even) { background-color: #ecf0f1; }
+    
+    .chart-container { position: relative; height: 500px; width: 100%; }
+
+    /* --- Calculation Styles --- */
+    .calc-card {
+      background: #ecf0f1;
+      border-left: 5px solid #2980b9;
+      padding: 20px;
+      margin-bottom: 20px;
+      border-radius: 4px;
+    }
+    .calc-card h3 { margin-top: 0; color: #2980b9; }
+    .formula {
+      font-size: 1.1em;
+      background: #fff;
+      padding: 10px;
+      border-radius: 4px;
+      display: inline-block;
+      border: 1px dashed #bdc3c7;
+      margin: 5px 0;
+    }
+    .citation { font-size: 0.85em; color: #7f8c8d; font-style: italic; }
+  </style>
+</head>
+<body>
+
+<!-- Navigation Bar -->
+<div id="navbar">
+  <button class="nav-btn active" onclick="switchScreen('screen-sim', this)">3D Simulation</button>
+  <button class="nav-btn" onclick="switchScreen('screen-table', this)">Observation Table</button>
+  <button class="nav-btn" onclick="switchScreen('screen-graph', this)">Graph</button>
+  <button class="nav-btn" onclick="switchScreen('screen-calc', this)">Formulas & Results</button>
+</div>
+
+<!-- Screen 1: 3D Simulation with HTML Overlay Buttons -->
+<div id="screen-sim" class="screen">
+  
+  <!-- Animated HTML Overlay Controls -->
+  <div class="control-panel panel-top">
+    <button class="sim-btn btn-record" onclick="recordData()">Record Reading</button>
+  </div>
+  
+  <div class="control-panel panel-left">
+    <button class="sim-btn btn-up" onmousedown="btnUp=true" onmouseup="btnUp=false" ontouchstart="btnUp=true" ontouchend="btnUp=false">UP</button>
+    <button class="sim-btn btn-down" onmousedown="btnDown=true" onmouseup="btnDown=false" ontouchstart="btnDown=true" ontouchend="btnDown=false">DOWN</button>
+  </div>
+  
+  <div class="control-panel panel-right">
+    <button id="startBtn" class="sim-btn btn-start" onclick="startSim()">START</button>
+    <button id="stopBtn" class="sim-btn btn-stop" onclick="stopSim()">STOP</button>
+  </div>
+
+  <canvas id="sim-canvas"></canvas>
+</div>
+
+<!-- Screen 2: Data Table -->
+<div id="screen-table" class="screen">
+  <div class="content-container">
+    <h1>Tensile Test Observations</h1>
+    <p style="text-align:center; color:#7f8c8d;">Data prepopulated strictly from laboratory notes.</p>
+    
+    <table id="results-table">
+      <thead>
+        <tr>
+          <th>S.No.</th>
+          <th>Load (kN)</th>
+          <th>Ivory Scale / Deformation (mm)</th>
+        </tr>
+      </thead>
+      <tbody id="table-body">
+        <!-- Injected via JS -->
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Screen 3: Graph -->
+<div id="screen-graph" class="screen">
+  <div class="content-container">
+    <h1>Load vs. Deformation Graph</h1>
+    <p style="text-align:center; color:#7f8c8d;">Visualizes Yield Point and Failure Load.</p>
+    <div class="chart-container">
+      <canvas id="myChart"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Screen 4: Calculations -->
+<div id="screen-calc" class="screen">
+  <div class="content-container">
+    <h1>Model Calculations & Results</h1>
+    
+    <div class="calc-card">
+      <h3>1. Initial Specimen Details</h3>
+      <ul>
+        <li>Specimen Initial Diameter (d₁) = <strong>12.82 mm</strong></li>
+        <li>Average Initial Diameter (d) = <strong>12.82 mm</strong></li>
+        <li>Length of the specimen between grippers = <strong>192 mm</strong></li>
+        <li>Original Cross Area (A₀) = <strong>129.02 mm²</strong></li>
+        <li>Extensometer LC = <strong>0.01 mm</strong></li>
+      </ul>
+    </div>
+
+    <div class="calc-card">
+      <h3>2. Post-Failure Specimen Details</h3>
+      <ul>
+        <li>Final Diameter of Specimen (at neck) = <strong>7.86 mm</strong></li>
+        <li>Final Cross Area at neck = <strong>48.5 mm²</strong></li>
+        <li>Final Length between 3 punch marks = <strong>85 mm</strong></li>
+      </ul>
+    </div>
+
+    <div class="calc-card">
+      <h3>3. Yield Stress Calculation</h3>
+      <p>Yield Load = <strong>43 kN</strong></p>
+      <div class="formula">
+        Yield Stress (N/mm²) = Load at yield point / A₀ <br>
+        = 43 / 129.02 <br>
+        = <strong>333.28 N/mm²</strong> <span class="citation"></span>
+      </div>
+    </div>
+
+    <div class="calc-card">
+      <h3>4. Tensile Strength Calculation</h3>
+      <p>Ultimate Load = <strong>49 kN</strong></p>
+      <div class="formula">
+        Tensile strength (N/mm²) = Ultimate load / A₀ <br>
+        = 49 / 129.02 <br>
+        = <strong>379.79 N/mm²</strong> <span class="citation"></span>
+      </div>
+    </div>
+
+    <div class="calc-card">
+      <h3>5. Material Properties Results</h3>
+      <ul>
+        <li>Modulus of Elasticity (GPa) = <strong>211.13 GPa</strong></li>
+        <li>Percentage elongation (%) = <strong>35.26 %</strong></li>
+        <li>Percentage reduction in area (%) = <strong>62.41 %</strong></li>
+      </ul>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// --- Global Data (From Lab Notes) ---
+let recordedData = [
+  { load: 2.5, def: 0.4 }, { load: 5.0, def: 0.8 },
+  { load: 7.5, def: 1.0 }, { load: 10.0, def: 1.0 },
+  { load: 12.5, def: 1.0 }, { load: 15.0, def: 1.2 },
+  { load: 17.5, def: 1.2 }, { load: 20.0, def: 1.5 },
+  { load: 22.5, def: 1.5 }, { load: 25.0, def: 1.8 },
+  { load: 27.5, def: 1.8 }, { load: 30.0, def: 2.0 },
+  { load: 32.5, def: 2.0 }, { load: 35.0, def: 2.2 },
+  { load: 37.5, def: 2.4 }, { load: 40.0, def: 2.5 },
+  { load: 41.0, def: 2.8 }, { load: 42.0, def: 3.0 },
+  { load: 43.0, def: 3.6 }, { load: 42.0, def: 33.0 } // 42 kN at failure mark of 33mm
+];
+
+let myChartInstance = null;
+
+// --- Tab Switching Logic ---
+function switchScreen(screenId, btnElement) {
+  document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
+  document.getElementById(screenId).style.display = 'block';
+  
+  document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+  btnElement.classList.add('active');
+  
+  if (screenId === 'screen-sim') {
+    loop(); 
+  } else {
+    noLoop(); 
+  }
+  
+  if (screenId === 'screen-table') populateTable();
+  if (screenId === 'screen-graph') drawGraph();
+}
+
+// --- Table Generation ---
+function populateTable() {
+  const tbody = document.getElementById('table-body');
+  tbody.innerHTML = ""; 
+  recordedData.forEach((row, index) => {
+    let tr = document.createElement('tr');
+    tr.innerHTML = `<td>${index + 1}</td><td>${row.load.toFixed(1)}</td><td>${row.def.toFixed(1)}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+// --- Chart.js Graph Generation ---
+function drawGraph() {
+  const ctx = document.getElementById('myChart').getContext('2d');
+  const chartData = recordedData.map(d => ({ x: d.def, y: d.load }));
+
+  if (myChartInstance) myChartInstance.destroy(); 
+
+  myChartInstance = new Chart(ctx, {
+    type: 'scatter', 
+    data: {
+      datasets: [{
+        label: 'Load vs Deformation Curve',
+        data: chartData,
+        backgroundColor: '#3498db',
+        borderColor: '#2980b9',
+        borderWidth: 2,
+        showLine: true, 
+        tension: 0.3, 
+        pointRadius: 4,
+        pointHoverRadius: 6
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: {
+          title: { display: true, text: 'Ivory Scale Reading / Deformation (mm)', font: {size: 14, weight: 'bold'} },
+          min: 0,
+          max: 35
+        },
+        y: {
+          title: { display: true, text: 'Load (kN)', font: {size: 14, weight: 'bold'} },
+          min: 0,
+          max: 50
+        }
+      },
+      plugins: {
+        tooltip: {
+          callbacks: {
+            label: function(ctx) { return `Def: ${ctx.parsed.x} mm, Load: ${ctx.parsed.y} kN`; }
+          }
+        }
+      }
+    }
+  });
+}
+
+// ==========================================
+// --- P5.JS 3D SIMULATION LOGIC BELOW ---
+// ==========================================
+let crossheadY = -150; 
+let originalCrossheadY = -150;
+let maxStretch = 60; 
+let stretch = 0; 
+let currentLoad = 0;
+let maxLoad = 0;
+let displacement = 0;
+let isRunning = false;
+let isBroken = false;
+let btnUp = false;
+let btnDown = false;
+let rotY = 0;
+let hud;
+
+// HTML Button Handlers
+function startSim() { if (!isBroken) isRunning = true; document.getElementById("stopBtn").innerText = "STOP"; }
+function stopSim() { 
+  if (isBroken) { // Reset
+    isBroken = false; isRunning = false; stretch = 0; currentLoad = 0; maxLoad = 0; displacement = 0; crossheadY = originalCrossheadY;
+    document.getElementById("stopBtn").innerText = "STOP";
+  } else {
+    isRunning = false; 
+  }
+}
+function recordData() {
+  recordedData.push({ load: parseFloat(currentLoad.toFixed(2)), def: parseFloat(displacement.toFixed(2)) });
+}
+
+function setup() {
+  let canvas = createCanvas(windowWidth, windowHeight - 60, WEBGL); 
+  canvas.parent('screen-sim');
+  
+  hud = createGraphics(windowWidth, windowHeight - 60);
+  hud.ellipseMode(CENTER);
+  hud.textAlign(CENTER, CENTER);
+}
+
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight - 60);
+  hud.resizeCanvas(windowWidth, windowHeight - 60);
+}
+
+function draw() {
+  background(220, 230, 240);
+  
+  // Logic Update
+  if (!isRunning && !isBroken) {
+    if (btnUp) { crossheadY -= 1.5; originalCrossheadY = crossheadY; }
+    if (btnDown) { crossheadY += 1.5; originalCrossheadY = crossheadY; }
+  }
+  
+  if (isRunning && !isBroken) {
+    stretch += 0.15; 
+    crossheadY = originalCrossheadY - stretch;
+    displacement = stretch;
+    
+    // Non-linear Hooke's simulation
+    if (stretch < maxStretch * 0.7) currentLoad += 0.9; else currentLoad += 0.2; 
+    if (currentLoad > maxLoad) maxLoad = currentLoad;
+    
+    // Break Point
+    if (stretch >= maxStretch) {
+      isBroken = true;
+      isRunning = false;
+      currentLoad = 0; 
+      document.getElementById("stopBtn").innerText = "RESET";
+    }
+  }
+  
+  // Draw 3D Machine
+  push();
+  lights(); 
+  directionalLight(255, 255, 255, -1, 1, -1);
+  translate(0, 150, -300); // Adjust Y for navbar space
+  
+  // Allow user rotation (avoiding HTML buttons area intuitively)
+  if (mouseIsPressed && mouseY > 100 && mouseY < height - 150) {
+    rotY += (mouseX - pmouseX) * 0.01;
+  }
+  rotateY(rotY);
+  rotateX(-PI / 16); 
+  
+  drawMachine();
+  pop();
+  
+  // Draw HUD UI (Dials Only)
+  hud.clear();
+  drawHUD();
+  
+  push();
+  resetMatrix();
+  image(hud, -width / 2, -height / 2);
+  pop();
+}
+
+function drawMachine() {
+  noStroke();
+  
+  fill(80, 180, 100); push(); box(400, 100, 300); pop();
+  
+  fill(200);
+  push(); translate(-140, -300, 0); box(30, 600, 30); pop();
+  push(); translate(140, -300, 0); box(30, 600, 30); pop();
+  
+  fill(80, 180, 100); push(); translate(0, -600, 0); box(360, 60, 100); pop();
+  fill(80, 180, 100); push(); translate(0, crossheadY, 0); box(360, 60, 100); pop();
+  
+  drawSpecimenAndExtensometer();
+}
+
+function drawSpecimenAndExtensometer() {
+  let topAnchor = -570, botAnchor = crossheadY - 30, specRadius = 12;
+  push(); fill(130, 100, 90);
+  
+  if (!isBroken) {
+    let specHeight = abs(botAnchor - topAnchor);
+    push(); translate(0, topAnchor, 0); drawCylinder(specRadius, specHeight); pop();
+    drawExtensometer(topAnchor + (specHeight/2) - 20, topAnchor + (specHeight/2) + 20);
+  } else {
+    let halfHeight = abs((originalCrossheadY - 30) - topAnchor) / 2;
+    push(); translate(0, topAnchor, 0); drawCylinder(specRadius, halfHeight - 10); pop();
+    push(); translate(0, botAnchor - halfHeight + 10, 0); drawCylinder(specRadius, halfHeight - 10); pop();
+    drawExtensometer(botAnchor - halfHeight + 20, botAnchor - halfHeight + 60);
+  }
+  pop();
+}
+
+function drawExtensometer(y1, y2) {
+  push(); fill(30);
+  push(); translate(0, y1, 20); box(30, 10, 40); pop();
+  push(); translate(0, y2, 20); box(30, 10, 40); pop();
+  fill(200);
+  push(); translate(20, (y1+y2)/2, 35); box(5, abs(y2-y1) + 40, 5); pop();
+  pop();
+}
+
+function drawCylinder(r, h) {
+  push(); translate(0, h / 2, 0); cylinder(r, h, 24, 1); pop();
+}
+
+function drawHUD() {
+  // Dials in top left/right corners
+  drawDial(150, 120, "Deformation (mm)", displacement, 100);
+  drawDial(width - 150, 120, "Load (kN)", currentLoad, 200);
+}
+
+function drawDial(x, y, label, value, maxVal) {
+  hud.push(); hud.translate(x, y);
+  
+  // Dial background
+  hud.fill(255); hud.stroke(150); hud.strokeWeight(4); hud.circle(0, 0, 140);
+  hud.noStroke(); hud.fill(40, 130, 180); hud.arc(0, 0, 70, 70, PI, TWO_PI);
+  hud.fill(50, 80, 150); hud.arc(0, 0, 70, 70, 0, PI);
+  
+  // Ticks
+  hud.stroke(0); hud.strokeWeight(2);
+  for (let i = 0; i <= 20; i++) {
+    let ang = map(i, 0, 20, PI - QUARTER_PI, TWO_PI + QUARTER_PI);
+    hud.line(cos(ang)*56, sin(ang)*56, cos(ang)*66, sin(ang)*66);
+  }
+  
+  // Live needle
+  let angle = map(value, 0, maxVal, PI - QUARTER_PI, TWO_PI + QUARTER_PI);
+  hud.stroke(0); hud.strokeWeight(3); hud.line(0, 0, cos(angle)*60, sin(angle)*60);
+  
+  // Max load needle (Red)
+  if (label === "Load (kN)") {
+    let maxAngle = map(maxLoad, 0, maxVal, PI - QUARTER_PI, TWO_PI + QUARTER_PI);
+    hud.stroke(200, 0, 0); hud.strokeWeight(2); hud.line(0, 0, cos(maxAngle)*62, sin(maxAngle)*62);
+  }
+  
+  // Center pin and text
+  hud.noStroke(); hud.fill(0); hud.circle(0, 0, 12);
+  hud.fill(0); hud.textSize(16); hud.text(label, 0, 90);
+  hud.textSize(18); hud.text(value.toFixed(1), 0, 115);
+  hud.pop();
+}
+</script>
+</body>
+</html>
