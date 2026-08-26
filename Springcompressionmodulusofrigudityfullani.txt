@@ -1,0 +1,679 @@
+// ============================================================
+// DUAL-SCREEN SPRING TESTING SIMULATOR
+// Processing Java Mode - P3D
+// ============================================================
+
+// ------------------------------------------------------------
+// GLOBAL SHARED DATA
+// ------------------------------------------------------------
+
+int currentIndex = 0;
+
+int lastChangeTime = 0;
+int displayDuration = 4000;   // 4 seconds per load
+
+// Load values in Kgf
+int[] loads = {
+  10, 15, 20, 25, 30
+};
+
+// Load values converted to Newtons
+float[] forces = {
+  98.1f,
+  147.15f,
+  196.2f,
+  245.25f,
+  294.3f
+};
+
+// Measured deflection in mm
+float[] deflections = {
+  30f,
+  41f,
+  55f,
+  69f,
+  83f
+};
+
+// Modulus/Rigidity values
+float[] rigidities = {
+  1336.70f,
+  1467.15f,
+  1458.22f,
+  1452.94f,
+  1449.44f
+};
+
+// Stiffness values
+float[] stiffnesses = {
+  3.27f,
+  3.58f,
+  3.56f,
+  3.55f,
+  3.54f
+};
+
+// Smooth animation variables
+float currentVisualDeflection = 0;
+float targetVisualDeflection = 0;
+
+
+// ============================================================
+// SETUP
+// ============================================================
+
+void setup() {
+
+  // Window size
+  // Left side  = 600 px
+  // Right side = 700 px
+  size(1300, 700, P3D);
+
+  smooth();
+
+  // IMPORTANT:
+  // Do NOT use surface.setTitle() here.
+  // It causes the error:
+  // "The method setTitle(String) is undefined for the type PSurface"
+
+  // Start timer correctly
+  lastChangeTime = millis();
+
+  // Start with first deflection
+  targetVisualDeflection = deflections[0];
+  currentVisualDeflection = targetVisualDeflection;
+}
+
+
+// ============================================================
+// DRAW
+// ============================================================
+
+void draw() {
+
+  // ----------------------------------------------------------
+  // 1. BACKGROUND
+  // ----------------------------------------------------------
+
+  background(245, 250, 255);
+
+
+  // ----------------------------------------------------------
+  // 2. LEFT PANEL BACKGROUND
+  // ----------------------------------------------------------
+
+  hint(DISABLE_DEPTH_TEST);
+
+  camera();
+
+  fill(220, 230, 240);
+  noStroke();
+
+  rect(0, 0, 600, height);
+
+  hint(ENABLE_DEPTH_TEST);
+
+
+  // ----------------------------------------------------------
+  // 3. TIMER / LOAD CHANGE
+  // ----------------------------------------------------------
+
+  if (millis() - lastChangeTime > displayDuration) {
+
+    currentIndex++;
+
+    if (currentIndex >= loads.length) {
+      currentIndex = 0;
+    }
+
+    targetVisualDeflection = deflections[currentIndex];
+
+    lastChangeTime = millis();
+  }
+
+
+  // ----------------------------------------------------------
+  // 4. SMOOTH DEFLECTION ANIMATION
+  // ----------------------------------------------------------
+
+  currentVisualDeflection = lerp(
+    currentVisualDeflection,
+    targetVisualDeflection,
+    0.05f
+  );
+
+
+  // ==========================================================
+  // PANEL 1
+  // 3D SPRING SIMULATION
+  // ==========================================================
+
+  pushMatrix();
+
+  // Position spring in left panel
+  translate(300, height * 0.20f, 0);
+
+  // Slight viewing angle
+  rotateX(PI / 8.0f);
+
+  // Continuous rotation
+  rotateY(millis() * 0.0005f);
+
+  // Draw spring
+  drawSpring(currentVisualDeflection);
+
+  popMatrix();
+
+
+  // ----------------------------------------------------------
+  // LEFT PANEL INFORMATION
+  // ----------------------------------------------------------
+
+  hint(DISABLE_DEPTH_TEST);
+
+  camera();
+
+  fill(0);
+
+  textSize(18);
+  textAlign(CENTER, BOTTOM);
+
+  text(
+    "Applying Load: " + loads[currentIndex] + " Kgf",
+    300,
+    height - 30
+  );
+
+
+  // ----------------------------------------------------------
+  // DEFLECTION INFORMATION
+  // ----------------------------------------------------------
+
+  textSize(15);
+
+  text(
+    "Deflection: " +
+    nf(currentVisualDeflection, 0, 1) +
+    " mm",
+    300,
+    height - 8
+  );
+
+
+  // ----------------------------------------------------------
+  // CENTER DIVIDER
+  // ----------------------------------------------------------
+
+  stroke(150);
+  strokeWeight(2);
+
+  line(
+    600,
+    0,
+    600,
+    height
+  );
+
+
+  // ==========================================================
+  // PANEL 2
+  // DATA TABLE & CALCULATIONS
+  // ==========================================================
+
+  pushMatrix();
+
+  // Move drawing origin to right panel
+  translate(600, 0);
+
+  drawTableAndMath();
+
+  popMatrix();
+
+
+  hint(ENABLE_DEPTH_TEST);
+}
+
+
+// ============================================================
+// DRAW 3D SPRING
+// ============================================================
+
+void drawSpring(float defl) {
+
+  // ----------------------------------------------------------
+  // SPRING PARAMETERS
+  // ----------------------------------------------------------
+
+  stroke(80, 80, 90);
+  strokeWeight(5);
+  noFill();
+
+  float numCoils = 25;
+  float radius = 45;
+  float baseHeight = 350;
+
+
+  // ----------------------------------------------------------
+  // COMPRESSED SPRING HEIGHT
+  // ----------------------------------------------------------
+
+  float currentHeight =
+    baseHeight - (defl * 3.0f);
+
+
+  // Prevent spring from becoming too small
+  currentHeight = max(currentHeight, 80);
+
+
+  // ----------------------------------------------------------
+  // DRAW HELICAL SPRING
+  // ----------------------------------------------------------
+
+  beginShape();
+
+  for (
+    float t = 0;
+    t <= numCoils * TWO_PI;
+    t += 0.1f
+    ) {
+
+    float x = radius * cos(t);
+
+    float z = radius * sin(t);
+
+    float y = map(
+      t,
+      0,
+      numCoils * TWO_PI,
+      0,
+      currentHeight
+    );
+
+    vertex(x, y, z);
+  }
+
+  endShape();
+
+
+  // ==========================================================
+  // HANGER + WEIGHT
+  // ==========================================================
+
+  pushMatrix();
+
+  translate(
+    0,
+    currentHeight + 25,
+    0
+  );
+
+
+  // ----------------------------------------------------------
+  // HANGER HOOK
+  // ----------------------------------------------------------
+
+  stroke(50);
+  strokeWeight(3);
+
+  line(
+    0,
+    -25,
+    0,
+    0,
+    0,
+    0
+  );
+
+
+  // ----------------------------------------------------------
+  // WEIGHT BLOCK
+  // ----------------------------------------------------------
+
+  fill(200, 50, 50);
+
+  noStroke();
+
+  box(
+    80,
+    60,
+    80
+  );
+
+
+  // ----------------------------------------------------------
+  // WEIGHT LABEL
+  // ----------------------------------------------------------
+
+  fill(255);
+
+  textSize(18);
+
+  textAlign(
+    CENTER,
+    CENTER
+  );
+
+  // Keep label facing approximately toward viewer
+  rotateY(
+    -millis() * 0.0005f
+  );
+
+  text(
+    loads[currentIndex] + " Kgf",
+    0,
+    0,
+    41
+  );
+
+
+  popMatrix();
+}
+
+
+// ============================================================
+// DRAW TABLE + CALCULATIONS
+// ============================================================
+
+void drawTableAndMath() {
+
+  // ----------------------------------------------------------
+  // TITLE
+  // ----------------------------------------------------------
+
+  fill(0);
+
+  textAlign(
+    LEFT,
+    TOP
+  );
+
+  textSize(24);
+
+  text(
+    "Observation & Tabulation",
+    30,
+    30
+  );
+
+
+  // ----------------------------------------------------------
+  // TABLE POSITION
+  // ----------------------------------------------------------
+
+  float startX = 30;
+  float startY = 80;
+
+  float rowHeight = 35;
+
+
+  // ----------------------------------------------------------
+  // TABLE HEADERS
+  // ----------------------------------------------------------
+
+  String[] headers = {
+    "S.No",
+    "Load(Kgf)",
+    "Load(N)",
+    "Deflection(mm)",
+    "Rigidity(N/mm²)",
+    "Stiffness"
+  };
+
+
+  // Column widths
+  float[] colWidths = {
+    50,
+    90,
+    80,
+    130,
+    140,
+    90
+  };
+
+
+  // Calculate total table width
+  float totalWidth = 0;
+
+  for (int i = 0; i < colWidths.length; i++) {
+
+    totalWidth += colWidths[i];
+  }
+
+
+  // ==========================================================
+  // TABLE HEADER
+  // ==========================================================
+
+  stroke(0);
+  strokeWeight(1);
+
+  fill(200, 220, 240);
+
+  rect(
+    startX,
+    startY,
+    totalWidth,
+    rowHeight
+  );
+
+
+  // Header text
+  fill(0);
+
+  textSize(15);
+
+  float xOff = startX;
+
+
+  for (int i = 0; i < headers.length; i++) {
+
+    text(
+      headers[i],
+      xOff + 5,
+      startY + 8
+    );
+
+    xOff += colWidths[i];
+  }
+
+
+  // ==========================================================
+  // TABLE ROWS
+  // ==========================================================
+
+  for (int i = 0; i < loads.length; i++) {
+
+    float yOff =
+      startY +
+      (i + 1) * rowHeight;
+
+
+    // --------------------------------------------------------
+    // Highlight active row
+    // --------------------------------------------------------
+
+    if (i == currentIndex) {
+
+      fill(255, 255, 180);
+
+    } else {
+
+      fill(255);
+    }
+
+
+    // --------------------------------------------------------
+    // Row rectangle
+    // --------------------------------------------------------
+
+    stroke(150);
+
+    rect(
+      startX,
+      yOff,
+      totalWidth,
+      rowHeight
+    );
+
+
+    // --------------------------------------------------------
+    // Row text
+    // --------------------------------------------------------
+
+    fill(0);
+
+    xOff = startX;
+
+
+    // S.No
+    text(
+      String.valueOf(i + 1),
+      xOff + 5,
+      yOff + 8
+    );
+
+    xOff += colWidths[0];
+
+
+    // Load Kgf
+    text(
+      String.valueOf(loads[i]),
+      xOff + 5,
+      yOff + 8
+    );
+
+    xOff += colWidths[1];
+
+
+    // Load Newton
+    text(
+      String.valueOf(forces[i]),
+      xOff + 5,
+      yOff + 8
+    );
+
+    xOff += colWidths[2];
+
+
+    // Deflection
+    text(
+      String.valueOf(deflections[i]),
+      xOff + 5,
+      yOff + 8
+    );
+
+    xOff += colWidths[3];
+
+
+    // Rigidity
+    text(
+      String.valueOf(rigidities[i]),
+      xOff + 5,
+      yOff + 8
+    );
+
+    xOff += colWidths[4];
+
+
+    // Stiffness
+    text(
+      String.valueOf(stiffnesses[i]),
+      xOff + 5,
+      yOff + 8
+    );
+  }
+
+
+  // ==========================================================
+  // LIVE CALCULATION PANEL
+  // ==========================================================
+
+  float calcY =
+    startY +
+    (loads.length + 2) * rowHeight;
+
+
+  // Panel background
+  fill(40, 40, 60);
+
+  noStroke();
+
+  rect(
+    startX,
+    calcY,
+    totalWidth,
+    140,
+    5
+  );
+
+
+  // ----------------------------------------------------------
+  // Calculation title
+  // ----------------------------------------------------------
+
+  fill(255);
+
+  textSize(18);
+
+  text(
+    "Live Calculations (Reading " +
+    (currentIndex + 1) +
+    ")",
+    startX + 15,
+    calcY + 15
+  );
+
+
+  // ==========================================================
+  // RIGIDITY CALCULATION
+  // ==========================================================
+
+  textSize(15);
+
+  fill(200, 255, 200);
+
+  text(
+    "Modulus of Rigidity (C) = (8 × W × Dm³ × n) / (δ × d⁴)",
+    startX + 15,
+    calcY + 50
+  );
+
+
+  text(
+    "C = (8 × " +
+    loads[currentIndex] +
+    " × 17.25³ × 25) / (" +
+    deflections[currentIndex] +
+    " × 4⁴) = " +
+    rigidities[currentIndex] +
+    " N/mm²",
+    startX + 15,
+    calcY + 70
+  );
+
+
+  // ==========================================================
+  // STIFFNESS CALCULATION
+  // ==========================================================
+
+  fill(200, 230, 255);
+
+  text(
+    "Stiffness (K) = W / δ",
+    startX + 15,
+    calcY + 100
+  );
+
+
+  text(
+    "K = " +
+    forces[currentIndex] +
+    " N / " +
+    deflections[currentIndex] +
+    " mm = " +
+    stiffnesses[currentIndex] +
+    " N/mm",
+    startX + 15,
+    calcY + 120
+  );
+}
