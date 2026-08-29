@@ -1,0 +1,834 @@
+// ============================================================
+// MULTI-SOLID 3D IMPACT & JUMP LAB - ULTIMATE EDITION
+// ============================================================
+// PROCESSING ANDROID MODE / P3D
+//
+// GUI
+// ------------------------------------------------------------
+// Shape selection: PREV / NEXT / DROP THIS / DROP ALL / RAMP JUMP
+// Simulation screen: SLICE / SCRUB / RESET / MENU
+// ============================================================
+
+final int SCREEN_MENU = 0;
+final int SCREEN_SIM = 1;
+final int SCREEN_DROP_ALL = 2;
+final int SCREEN_JUMP = 3;
+
+int currentScreen = SCREEN_MENU;
+
+final int BOX = 0;
+final int WEDGE = 1;
+final int CYLINDER = 2;
+final int CONE = 3;
+final int SPHERE = 4;
+final int TORUS = 5;
+final int BIKE = 6;
+final int AMBASSADOR = 7;
+final int RACECAR = 8;
+final int SHAPE_COUNT = 9;
+
+int selectedShape = BOX;
+Solid currentSolid;
+Solid[] allSolids = new Solid[SHAPE_COUNT];
+
+final float TORUS_MAJOR_R = 85.0;
+final float TORUS_TUBE_R = 35.0;
+final int TORUS_U_STEPS = 64;
+final int TORUS_V_STEPS = 24;
+
+float gravity = 0.25;
+float groundY = 190.0;
+float dropHeight = 220.0;
+float fallVelocity = 0.0;
+
+float peakStressMPa = 0.68;
+float currentStressMPa = 0.0;
+float peakReactionForce = 8000.0;
+float currentReactionForce = 0.0;
+float peakImpulse = 8000.0;
+float currentImpulse = 0.0;
+float impulseRatio = 0.0;
+
+float impactProgress = 0.0;
+boolean falling = true;
+boolean impactActive = false;
+boolean automaticImpact = true;
+long impactStartTime = 0;
+
+float IMPACT_DURATION_MS = 15000.0;
+float DECAY_RATE = 4.0;
+
+// ============================================================
+// JUMP PHYSICS VARIABLES
+// ============================================================
+float jumpX, jumpY, jumpVelX, jumpVelY, jumpPitch;
+int jumpState = 0; // 0: flat, 1: ramp, 2: air, 3: landed
+float RAMP_START_X = -300;
+float RAMP_END_X = 0;
+float RAMP_HEIGHT = 120;
+float jumpMaxHeight = 0;
+float jumpLength = 0;
+float jumpStartX = 0;
+ArrayList<PVector> jumpTrail = new ArrayList<PVector>();
+
+// ============================================================
+// CAMERA & UI
+// ============================================================
+float rotX = -0.28;
+float rotY = 0.60;
+float cameraDistance = 850.0;
+float minimumZoom = 480.0;
+float maximumZoom = 3000.0;
+
+float previousTouchX, previousTouchY, oldPinchDistance;
+boolean pinchActive = false;
+
+float sliceSliderValue = 0.50;
+float impactSliderValue = 0.0;
+
+UIButton upButton, downButton, dropButton, dropAllButton, jumpButton;
+UIButton resetButton, menuButton;
+UISlider sliceSlider, impactSlider;
+
+// ============================================================
+// SETUP
+// ============================================================
+void setup() {
+  fullScreen(P3D);
+  orientation(PORTRAIT);
+  smooth(8);
+  textAlign(CENTER, CENTER);
+
+  allSolids[BOX] = new BoxSolid();
+  allSolids[WEDGE] = new WedgeSolid();
+  allSolids[CYLINDER] = new CylinderSolid();
+  allSolids[CONE] = new ConeSolid();
+  allSolids[SPHERE] = new SphereSolid();
+  allSolids[TORUS] = new TorusSolid();
+  allSolids[BIKE] = new BikeSolid();
+  allSolids[AMBASSADOR] = new AmbassadorCarSolid();
+  allSolids[RACECAR] = new RaceCarSolid();
+
+  createGUI();
+  createCurrentSolid();
+}
+
+void createGUI() {
+  upButton = new UIButton(width * 0.15, height * 0.65, width * 0.30, 60.0, "PREV");
+  downButton = new UIButton(width * 0.55, height * 0.65, width * 0.30, 60.0, "NEXT");
+  dropButton = new UIButton(width * 0.15, height * 0.74, width * 0.70, 55.0, "DROP THIS SOLID");
+  dropAllButton = new UIButton(width * 0.15, height * 0.82, width * 0.70, 55.0, "DROP ALL SOLIDS");
+  jumpButton = new UIButton(width * 0.15, height * 0.90, width * 0.70, 55.0, "RAMP JUMP");
+
+  resetButton = new UIButton(width * 0.15, height * 0.075, width * 0.30, 48.0, "RESET");
+  menuButton = new UIButton(width * 0.55, height * 0.075, width * 0.30, 48.0, "SHAPE MENU");
+
+  sliceSlider = new UISlider(width * 0.15, height - 240.0, width * 0.70, 0.50);
+  impactSlider = new UISlider(width * 0.15, height - 175.0, width * 0.70, 0.0);
+}
+
+void createCurrentSolid() {
+  currentSolid = allSolids[selectedShape];
+  restartSimulation();
+}
+
+// ============================================================
+// MAIN DRAW
+// ============================================================
+void draw() {
+  if (currentScreen == SCREEN_MENU) drawMenuScreen();
+  else if (currentScreen == SCREEN_SIM) drawSimulationScreen();
+  else if (currentScreen == SCREEN_DROP_ALL) drawDropAllScreen();
+  else if (currentScreen == SCREEN_JUMP) drawJumpScreen();
+}
+
+// ============================================================
+// MENU SCREEN
+// ============================================================
+void drawMenuScreen() {
+  background(238, 242, 246);
+  fill(25); textSize(25); text("3D IMPACT SOLID SELECTOR", width / 2.0, 35.0);
+  fill(80); textSize(14); text("Choose a solid to drop and study its impact", width / 2.0, 65.0);
+
+  setupCamera(850.0);
+
+  pushMatrix(); translate(0.0, groundY + 5.0, 0.0);
+  fill(180, 185, 190); stroke(100); box(500, 10, 500); popMatrix();
+
+  currentSolid.centerY = groundY - currentSolid.halfHeight();
+  currentSolid.drawTransparentShell();
+  currentSolid.centerY = 0.0;
+
+  hint(DISABLE_DEPTH_TEST); camera();
+  fill(25); textSize(27); text(currentSolid.name, width / 2.0, height * 0.55);
+  fill(80); textSize(15);
+  text("SOLID " + (selectedShape + 1) + " OF " + SHAPE_COUNT, width / 2.0, height * 0.59);
+  text(currentSolid.dimensionText(), width / 2.0, height * 0.62);
+
+  upButton.draw(); downButton.draw(); dropButton.draw(); dropAllButton.draw(); jumpButton.draw();
+  hint(ENABLE_DEPTH_TEST);
+}
+
+// ============================================================
+// SINGLE SIMULATION SCREEN
+// ============================================================
+void drawSimulationScreen() {
+  background(238, 242, 246); setupCamera(cameraDistance);
+  lights(); ambientLight(110, 110, 110); directionalLight(255, 255, 255, -0.5, -1.0, -0.7);
+
+  updateFalling(); updateImpact();
+  drawGround(650, 500); drawHeight();
+
+  currentSolid.drawCrossSection(sliceSlider.value);
+  if (!falling) currentSolid.drawStress(impactProgress, currentStressMPa);
+  
+  currentSolid.drawTransparentShell();
+  currentSolid.drawAnnotations();
+
+  if (falling) drawFallingLoad(currentSolid.centerY - currentSolid.halfHeight());
+  drawImpulseVector(true);
+  drawSimulationHUD("3D IMPACT DROP");
+}
+
+// ============================================================
+// DROP ALL SCREEN
+// ============================================================
+void drawDropAllScreen() {
+  background(238, 242, 246); 
+  setupCamera(cameraDistance * 2.1); // Zoomed out for 3x3 grid
+  lights(); ambientLight(110, 110, 110); directionalLight(255, 255, 255, -0.5, -1.0, -0.7);
+
+  updateFallingAll(); updateImpact();
+  drawGround(1600, 1000);
+
+  // 3x3 Grid pattern for 9 shapes
+  float[] xOff = {-450, 0, 450, -450, 0, 450, -450, 0, 450};
+  float[] zOff = {-350, -350, -350, 0, 0, 0, 350, 350, 350};
+
+  for (int i = 0; i < SHAPE_COUNT; i++) {
+    Solid s = allSolids[i];
+    pushMatrix(); translate(xOff[i], 0, zOff[i]);
+    s.drawCrossSection(sliceSlider.value);
+    if (!falling) s.drawStress(impactProgress, currentStressMPa);
+    s.drawTransparentShell();
+    if (falling) drawFallingLoad(s.centerY - s.halfHeight());
+    drawImpulseVector(false);
+    drawWorldText(s.name, 0, groundY + 30, 0, 22, color(40));
+    popMatrix();
+  }
+  drawSimulationHUD("ALL SOLIDS IMPACT");
+}
+
+// ============================================================
+// RAMP JUMP SCREEN
+// ============================================================
+void drawJumpScreen() {
+  background(238, 242, 246); setupCamera(cameraDistance * 1.6);
+  lights(); ambientLight(110, 110, 110); directionalLight(255, 255, 255, -0.5, -1.0, -0.7);
+
+  updateJump(); updateImpact();
+
+  // Draw Ground and Ramp
+  pushMatrix(); translate(0, groundY + 5.0, 0); fill(175, 180, 185); stroke(90); strokeWeight(2); box(2000, 10, 600); popMatrix();
+  drawWorldText("LANDING ZONE", 400, groundY + 35, 230, 22, color(20));
+  
+  // Ramp
+  pushMatrix(); translate((RAMP_START_X + RAMP_END_X)/2.0, groundY - RAMP_HEIGHT/2.0, 0);
+  fill(150, 155, 160); noStroke();
+  beginShape(TRIANGLES);
+  vertex(-(RAMP_END_X - RAMP_START_X)/2.0, RAMP_HEIGHT/2.0, -300); vertex((RAMP_END_X - RAMP_START_X)/2.0, RAMP_HEIGHT/2.0, -300); vertex((RAMP_END_X - RAMP_START_X)/2.0, -RAMP_HEIGHT/2.0, -300);
+  vertex(-(RAMP_END_X - RAMP_START_X)/2.0, RAMP_HEIGHT/2.0, 300); vertex((RAMP_END_X - RAMP_START_X)/2.0, RAMP_HEIGHT/2.0, 300); vertex((RAMP_END_X - RAMP_START_X)/2.0, -RAMP_HEIGHT/2.0, 300);
+  endShape();
+  beginShape(QUADS);
+  vertex(-(RAMP_END_X - RAMP_START_X)/2.0, RAMP_HEIGHT/2.0, -300); vertex((RAMP_END_X - RAMP_START_X)/2.0, -RAMP_HEIGHT/2.0, -300); vertex((RAMP_END_X - RAMP_START_X)/2.0, -RAMP_HEIGHT/2.0, 300); vertex(-(RAMP_END_X - RAMP_START_X)/2.0, RAMP_HEIGHT/2.0, 300);
+  endShape();
+  popMatrix();
+
+  // Draw Trail
+  noFill(); stroke(0, 150, 255, 150); strokeWeight(4);
+  beginShape(); for (PVector p : jumpTrail) vertex(p.x, p.y, p.z); endShape();
+
+  // Draw Vehicle
+  pushMatrix();
+  translate(jumpX, jumpY, 0);
+  rotateY(HALF_PI); // Rotate to face X axis (direction of travel)
+  rotateX(jumpPitch); // Pitch up/down
+
+  currentSolid.centerY = 0; // Local centering
+  currentSolid.drawCrossSection(sliceSlider.value);
+  if (jumpState == 3) currentSolid.drawStress(impactProgress, currentStressMPa);
+  currentSolid.drawTransparentShell();
+  
+  if (jumpState == 3) {
+    rotateX(-jumpPitch); rotateY(-HALF_PI); // unrotate for impulse vector
+    pushMatrix(); translate(0, currentSolid.halfHeight(), 0); drawImpulseVector(true); popMatrix();
+  }
+  popMatrix();
+
+  // Draw Metrics HUD
+  hint(DISABLE_DEPTH_TEST); camera();
+  fill(20); textSize(22); text(currentSolid.name + " - RAMP JUMP", width / 2, 30);
+  resetButton.draw(); menuButton.draw();
+
+  fill(255, 255, 255, 238); stroke(100); strokeWeight(2); rect(10, height - 140, width - 20, 120, 10);
+  fill(0, 100, 200); textSize(16); text("JUMP ANALYTICS", width / 2, height - 125);
+  fill(25); textSize(14);
+  text("Max Height (h): " + nf(jumpMaxHeight, 1, 1) + " units", width / 2, height - 100);
+  text("Jump Length (L): " + (jumpState==3 ? nf(jumpLength, 1, 1) : "---") + " units", width / 2, height - 80);
+  text(currentSolid.areaText(), width / 2, height - 60);
+  text("Landing Stress: " + (jumpState==3 ? nf(currentStressMPa, 1, 2) + " MPa" : "---"), width / 2, height - 40);
+
+  if (jumpState == 3) {
+    sliceSlider.draw("CROSS-SECTION SLICER"); 
+    impactSlider.draw("IMPACT TIME / STRESS PROPAGATION");
+  }
+  hint(ENABLE_DEPTH_TEST);
+}
+
+// ============================================================
+// PHYSICS UPDATE
+// ============================================================
+void updateFalling() {
+  if (!falling) return;
+  fallVelocity += gravity; currentSolid.centerY += fallVelocity;
+  if (currentSolid.centerY + currentSolid.halfHeight() >= groundY) {
+    currentSolid.centerY = groundY - currentSolid.halfHeight(); triggerImpact();
+  }
+}
+
+void updateFallingAll() {
+  if (!falling) return;
+  fallVelocity += gravity; boolean hit = false;
+  for (Solid s : allSolids) {
+    s.centerY += fallVelocity;
+    if (s.centerY + s.halfHeight() >= groundY) { s.centerY = groundY - s.halfHeight(); hit = true; }
+  }
+  if (hit) triggerImpact();
+}
+
+void updateJump() {
+  if (jumpState == 3) return; // Landed
+
+  jumpX += jumpVelX;
+  if (frameCount % 2 == 0) jumpTrail.add(new PVector(jumpX, jumpY, 0));
+
+  if (jumpState == 0) { // Flat approach
+    jumpY = groundY - currentSolid.halfHeight();
+    if (jumpX >= RAMP_START_X) jumpState = 1;
+  } 
+  else if (jumpState == 1) { // On Ramp
+    float rampRatio = (jumpX - RAMP_START_X) / (RAMP_END_X - RAMP_START_X);
+    jumpY = groundY - currentSolid.halfHeight() - (rampRatio * RAMP_HEIGHT);
+    jumpPitch = atan2(RAMP_HEIGHT, RAMP_END_X - RAMP_START_X); // Pitch up
+    
+    if (jumpX >= RAMP_END_X) {
+      jumpState = 2; 
+      jumpVelY = -(RAMP_HEIGHT / (RAMP_END_X - RAMP_START_X)) * jumpVelX * 0.9; 
+      jumpStartX = jumpX;
+    }
+  } 
+  else if (jumpState == 2) { // Airborne
+    jumpVelY += gravity; jumpY += jumpVelY;
+    float currentH = groundY - currentSolid.halfHeight() - jumpY;
+    if (currentH > jumpMaxHeight) jumpMaxHeight = currentH;
+    
+    // Dynamic pitch in air (slight nose dive)
+    jumpPitch = constrain(atan2(-jumpVelY, jumpVelX), -0.4, 0.4);
+
+    if (jumpY >= groundY - currentSolid.halfHeight()) {
+      jumpY = groundY - currentSolid.halfHeight();
+      jumpPitch = 0; jumpState = 3; jumpLength = jumpX - jumpStartX;
+      triggerImpact();
+    }
+  }
+}
+
+void triggerImpact() {
+  fallVelocity = 0.0; falling = false; impactActive = true; automaticImpact = true;
+  impactProgress = 0.0; impactSlider.value = 0.0;
+  currentStressMPa = peakStressMPa; currentReactionForce = peakReactionForce;
+  currentImpulse = peakImpulse; impulseRatio = 1.0; impactStartTime = millis();
+}
+
+void updateImpact() {
+  if (falling && currentScreen != SCREEN_JUMP) { currentStressMPa = 0; currentImpulse = 0; impulseRatio = 0; return; }
+  if (currentScreen == SCREEN_JUMP && jumpState != 3) { currentStressMPa = 0; currentImpulse = 0; return; }
+  if (!impactActive) return;
+
+  if (automaticImpact) {
+    impactProgress = constrain((millis() - impactStartTime) / IMPACT_DURATION_MS, 0, 1); 
+    impactSlider.value = impactProgress;
+  }
+
+  float decay = exp(-DECAY_RATE * impactProgress);
+  currentStressMPa = peakStressMPa * decay;
+  currentImpulse = peakImpulse * decay; impulseRatio = decay;
+  if (impactProgress >= 1.0) { impactActive = false; currentStressMPa = 0; currentImpulse = 0; impulseRatio = 0; }
+}
+
+// ============================================================
+// ENVIRONMENT RENDERING
+// ============================================================
+void drawGround(float w, float d) {
+  pushMatrix(); translate(0, groundY + 5.0, 0); fill(175, 180, 185); stroke(90); strokeWeight(2); box(w, 10, w); popMatrix();
+  pushMatrix(); translate(0, groundY, 0); stroke(145, 150, 155); strokeWeight(1);
+  for (float x = -d; x <= d; x += 50) line(x, 0, -d, x, 0, d);
+  for (float z = -d; z <= d; z += 50) line(-d, 0, z, d, 0, z);
+  popMatrix();
+}
+
+void drawHeight() {
+  if (!falling) return;
+  float bottom = currentSolid.centerY + currentSolid.halfHeight();
+  float h = groundY - bottom; if (h <= 1) return;
+  float x = currentSolid.width() / 2.0 + 100;
+  stroke(0, 110, 220); strokeWeight(3);
+  line(x, bottom, 0, x, groundY, 0); line(x - 10, bottom, 0, x + 10, bottom, 0); line(x - 10, groundY, 0, x + 10, groundY, 0);
+  drawWorldText("h = " + nf(h, 1, 1), x + 60, (bottom + groundY) / 2.0, 0, 22, color(0, 100, 210));
+}
+
+void drawFallingLoad(float top) {
+  stroke(20); strokeWeight(8);
+  line(0, top - 100, 0, 0, top - 10, 0); line(0, top - 10, 0, -16, top - 35, 0); line(0, top - 10, 0, 16, top - 35, 0);
+  drawWorldText("P", 45, top - 85, 0, 30, color(20));
+}
+
+void drawImpulseVector(boolean showText) {
+  if (impulseRatio <= 0.005) return;
+  hint(DISABLE_DEPTH_TEST);
+  float arrowLength = 200.0 * impulseRatio, endY = groundY - arrowLength;
+
+  stroke(255, 40, 30, 45 + 80 * impulseRatio); strokeWeight(15 * impulseRatio + 3); line(0, groundY, 0, 0, endY, 0);
+  stroke(225, 20, 20, 235); strokeWeight(7 * impulseRatio + 2); line(0, groundY, 0, 0, endY, 0);
+
+  if (arrowLength > 12) {
+    float ah = min(34, arrowLength * 0.28); 
+    line(0, endY, 0, -ah, endY + ah, 0); line(0, endY, 0, ah, endY + ah, 0);
+  }
+
+  pushMatrix(); translate(0, groundY, 0); noStroke(); fill(255, 20, 20, 220); sphere(12 + 5 * impulseRatio); popMatrix();
+
+  if (showText) {
+    drawWorldText("IMPULSE J", 130, endY - 5, 0, 20, color(200, 0, 0));
+    drawWorldText("J = " + nf(currentImpulse, 1, 0) + " N s", 125, endY + 23, 0, 16, color(150, 0, 0));
+  }
+  hint(ENABLE_DEPTH_TEST);
+}
+
+void drawWorldText(String s, float x, float y, float z, float size, color c) {
+  pushMatrix(); translate(x, y, z); rotateY(-rotY); rotateX(-rotX); fill(c); textSize(size); text(s, 0, 0); popMatrix();
+}
+
+void drawSimulationHUD(String title) {
+  hint(DISABLE_DEPTH_TEST); camera();
+  fill(20); textSize(22); text(title, width / 2, 30);
+  textSize(12); fill(75); text("Drag = Rotate | Pinch = Zoom", width / 2, 52);
+  resetButton.draw(); menuButton.draw();
+
+  if (falling) { fill(0, 110, 220); textSize(17); text("FREE FALL", width / 2, height - 285); } 
+  else if (impactActive) { fill(210, 0, 0); textSize(18); text("COLLISION STRESS = " + nf(currentStressMPa, 1, 2) + " MPa", width / 2, height - 285); } 
+
+  sliceSlider.draw("CROSS-SECTION SLICER"); impactSlider.draw("IMPACT TIME / STRESS PROPAGATION");
+
+  fill(255, 255, 255, 238); stroke(100); strokeWeight(2); rect(10, height - 100, width - 20, 80, 10);
+  fill(25); textSize(14); text("Stress(t) = 0.68 exp(-4t) MPa", width / 2, height - 70);
+  fill(70); textSize(11); text(currentScreen == SCREEN_DROP_ALL ? "Comparing structures" : currentSolid.dimensionText(), width / 2, height - 40);
+  hint(ENABLE_DEPTH_TEST);
+}
+
+// ============================================================
+// CONTROLS & INPUT
+// ============================================================
+void mousePressed() { handlePress(mouseX, mouseY); }
+void mouseDragged() {
+  if (currentScreen != SCREEN_MENU) {
+    if (impactSlider.handleDrag(mouseX, mouseY)) { automaticImpact = false; updateFromImpactSlider(); return; } 
+    if (sliceSlider.handleDrag(mouseX, mouseY)) return; 
+    rotateView(mouseX - previousTouchX, mouseY - previousTouchY);
+  }
+  previousTouchX = mouseX; previousTouchY = mouseY;
+}
+void mouseReleased() { sliceSlider.active = false; impactSlider.active = false; }
+
+void touchStarted() {
+  if (touches.length == 1) {
+    float tx = touches[0].x, ty = touches[0].y; 
+    if (currentScreen != SCREEN_MENU) { 
+      if (impactSlider.contains(tx, ty)) { impactSlider.active = true; automaticImpact = false; impactSlider.value = constrain((tx - impactSlider.x) / impactSlider.w, 0, 1); updateFromImpactSlider(); return; } 
+      if (sliceSlider.contains(tx, ty)) { sliceSlider.active = true; sliceSlider.value = constrain((tx - sliceSlider.x) / sliceSlider.w, 0, 1); return; } 
+    } 
+    previousTouchX = tx; previousTouchY = ty;
+  }
+  if (touches.length >= 2) { oldPinchDistance = dist(touches[0].x, touches[0].y, touches[1].x, touches[1].y); pinchActive = true; }
+}
+
+void touchMoved() {
+  if (touches.length >= 2) {
+    float newDist = dist(touches[0].x, touches[0].y, touches[1].x, touches[1].y); 
+    cameraDistance = constrain(cameraDistance - (newDist - oldPinchDistance) * 2.0, minimumZoom, maximumZoom); 
+    oldPinchDistance = newDist; pinchActive = true; return;
+  }
+  if (touches.length == 1) {
+    float tx = touches[0].x, ty = touches[0].y; 
+    if (impactSlider.active) { impactSlider.value = constrain((tx - impactSlider.x) / impactSlider.w, 0, 1); automaticImpact = false; updateFromImpactSlider(); return; } 
+    if (sliceSlider.active) { sliceSlider.value = constrain((tx - sliceSlider.x) / sliceSlider.w, 0, 1); return; } 
+    if (currentScreen != SCREEN_MENU) rotateView(tx - previousTouchX, ty - previousTouchY);
+    previousTouchX = tx; previousTouchY = ty;
+  }
+}
+
+void touchEnded() {
+  if (!pinchActive && !sliceSlider.active && !impactSlider.active && touches.length == 0) handlePress(mouseX, mouseY);
+  pinchActive = false; sliceSlider.active = false; impactSlider.active = false;
+}
+
+void handlePress(float x, float y) {
+  if (currentScreen == SCREEN_MENU) {
+    if (upButton.contains(x, y)) { selectedShape--; if (selectedShape < 0) selectedShape = SHAPE_COUNT - 1; createCurrentSolid(); } 
+    else if (downButton.contains(x, y)) { selectedShape++; if (selectedShape >= SHAPE_COUNT) selectedShape = 0; createCurrentSolid(); } 
+    else if (dropButton.contains(x, y)) { currentScreen = SCREEN_SIM; restartSimulation(); }
+    else if (dropAllButton.contains(x, y)) { currentScreen = SCREEN_DROP_ALL; restartAllSimulation(); }
+    else if (jumpButton.contains(x, y)) { currentScreen = SCREEN_JUMP; restartJump(); }
+  } else {
+    if (resetButton.contains(x, y)) { 
+      if (currentScreen == SCREEN_SIM) restartSimulation(); 
+      else if (currentScreen == SCREEN_DROP_ALL) restartAllSimulation(); 
+      else restartJump(); 
+    } 
+    else if (menuButton.contains(x, y)) currentScreen = SCREEN_MENU;
+  }
+}
+
+void rotateView(float dx, float dy) { rotY += dx * 0.01; rotX = constrain(rotX + dy * 0.01, -1.35, 1.35); }
+void updateFromImpactSlider() { impactProgress = impactSlider.value; float decay = exp(-DECAY_RATE * impactProgress); currentStressMPa = peakStressMPa * decay; currentImpulse = peakImpulse * decay; impulseRatio = decay; impactActive = true; }
+
+void restartSimulation() {
+  falling = true; impactActive = false; automaticImpact = true; fallVelocity = 0.0; impactProgress = 0.0; impactSlider.value = 0.0; sliceSlider.value = 0.50; currentStressMPa = 0; currentImpulse = 0; impulseRatio = 0;
+  if (currentSolid != null) currentSolid.centerY = groundY - currentSolid.halfHeight() - dropHeight;
+}
+void restartAllSimulation() { restartSimulation(); for (Solid s : allSolids) s.centerY = groundY - s.halfHeight() - dropHeight; }
+
+void restartJump() {
+  jumpX = -700; jumpY = groundY - currentSolid.halfHeight(); jumpVelX = 14.0; jumpVelY = 0; jumpState = 0; jumpMaxHeight = 0; jumpPitch = 0; jumpTrail.clear();
+  impactActive = false; impactProgress = 0; impactSlider.value = 0; sliceSlider.value = 0.5; currentStressMPa = 0; impulseRatio = 0;
+}
+
+void setupCamera(float dist) {
+  camera(sin(rotY) * cos(rotX) * dist, sin(rotX) * dist, cos(rotY) * cos(rotX) * dist, 0, 20, 0, 0, 1, 0);
+  perspective(PI / 3.0, float(width) / float(height), 10.0, 5000.0);
+}
+
+color stressColor(float n, float strength) {
+  n = constrain(n, 0, 1); color c;
+  if (n < 0.25) c = lerpColor(color(255, 20, 20), color(255, 130, 0), map(n, 0, 0.25, 0, 1));
+  else if (n < 0.50) c = lerpColor(color(255, 130, 0), color(255, 220, 0), map(n, 0.25, 0.50, 0, 1));
+  else if (n < 0.75) c = lerpColor(color(255, 220, 0), color(35, 210, 70), map(n, 0.50, 0.75, 0, 1));
+  else c = lerpColor(color(35, 210, 70), color(40, 100, 255), map(n, 0.75, 1.0, 0, 1));
+  return color(red(c), green(c), blue(c), 175.0 * strength);
+}
+
+// ============================================================
+// SOLID CLASSES (Primitives)
+// ============================================================
+abstract class Solid {
+  String name; float centerY;
+  Solid(String n) { name = n; }
+  abstract float width(); abstract float depth(); abstract float totalHeight(); abstract float halfHeight(); abstract float contactArea();
+  abstract void drawTransparentShell(); abstract void drawStress(float progress, float stress); abstract void drawCrossSection(float slider); abstract void drawAnnotations();
+  String dimensionText() { return ""; } String areaText() { return "Contact Area = " + nf(contactArea(), 1, 0) + " mm²"; }
+}
+
+class BoxSolid extends Solid {
+  float w=150, d=150, h=270; BoxSolid() { super("BOX"); }
+  float width(){return w;} float depth(){return d;} float totalHeight(){return h;} float halfHeight(){return h/2.0;} float contactArea(){return w*d;} String dimensionText(){return "W = "+nf(w,1,0)+" D = "+nf(d,1,0)+" H = "+nf(h,1,0);}
+  void drawTransparentShell() { hint(DISABLE_DEPTH_MASK); pushMatrix(); translate(0, centerY, 0); fill(100, 180, 225, 25); stroke(15, 50, 75, 200); strokeWeight(4); box(w, h, d); popMatrix(); hint(ENABLE_DEPTH_MASK); }
+  void drawStress(float p, float s) { float str=s/peakStressMPa, f=lerp(h*0.04, h, p); int b=32; float bh=f/b; pushMatrix(); translate(0, centerY, 0); for (int i=0; i<b; i++) { float c=i*bh+bh/2.0; fill(stressColor(c/f, str)); noStroke(); pushMatrix(); translate(0, h/2.0-c, 0); box(w*0.94, bh+1, d*0.94); popMatrix(); } popMatrix(); }
+  void drawCrossSection(float s) { float y=map(s, 0, 1, -h/2, h/2); pushMatrix(); translate(0, centerY+y, 0); rotateX(HALF_PI); fill(255,110,0,80); stroke(255, 110, 0); strokeWeight(5); rectMode(CENTER); rect(0, 0, w*0.96, d*0.96); popMatrix(); }
+  void drawAnnotations() { drawWorldText("BOX", -100, centerY - h / 2.0 - 25, 0, 20, color(20)); }
+}
+
+class WedgeSolid extends Solid {
+  float w=180, d=260, h=180; WedgeSolid() { super("WEDGE"); }
+  float width(){return w;} float depth(){return d;} float totalHeight(){return h;} float halfHeight(){return h/2.0;} float contactArea(){return w*d;} String dimensionText(){return "W = "+nf(w,1,0)+" D = "+nf(d,1,0)+" H = "+nf(h,1,0);}
+  void drawTransparentShell() { hint(DISABLE_DEPTH_MASK); drawWedge(centerY, color(110, 170, 225, 25), 200); hint(ENABLE_DEPTH_MASK); }
+  void drawStress(float p, float s) { float str=s/peakStressMPa, f=lerp(h*0.05, h, p); int b=28; float bh=f/b; for(int i=0; i<b; i++) { float cy=i*bh+bh/2.0; pushMatrix(); translate(0, centerY+(h/2.0-cy), 0); noStroke(); fill(stressColor(cy/f, str)); box(w*0.94, bh+1, d*constrain(1.0-(cy/h)*0.75, 0.18, 1.0)); popMatrix(); } }
+  void drawCrossSection(float s) { float y=map(s, 0, 1, -h/2, h/2); pushMatrix(); translate(0, centerY+y, 0); rotateX(HALF_PI); fill(255,110,0,80); stroke(255, 110, 0); strokeWeight(5); rectMode(CENTER); rect(0, 0, w*0.95, d*constrain(1.0-((y+h/2)/h)*0.75, 0.18, 1.0)); popMatrix(); }
+  void drawAnnotations() { drawWorldText("WEDGE", -120, centerY - h / 2 - 25, 0, 20, color(20)); }
+}
+void drawWedge(float cy, color fc, int as) { float w=180, d=260, h=180, x=w/2, z=d/2, yB=cy+h/2, yT=cy-h/2; pushMatrix(); noStroke(); fill(fc); beginShape(QUADS); vertex(-x,yB,-z); vertex(x,yB,-z); vertex(x,yT+h*0.05,-z); vertex(-x,yT+h*0.05,-z); vertex(-x,yB,z); vertex(x,yB,z); vertex(x,yT,z); vertex(-x,yT,z); vertex(-x,yB,-z); vertex(x,yB,-z); vertex(x,yB,z); vertex(-x,yB,z); endShape(); beginShape(TRIANGLES); vertex(-x,yT+h*0.05,-z); vertex(x,yT+h*0.05,-z); vertex(x,yT,z); vertex(-x,yT+h*0.05,-z); vertex(x,yT,z); vertex(-x,yT,z); endShape(); stroke(20,50,75,as); strokeWeight(4); noFill(); line(-x,yB,-z, x,yB,-z); line(-x,yB,z, x,yB,z); line(-x,yB,-z, -x,yB,z); line(x,yB,-z, x,yT,z); popMatrix(); }
+
+class CylinderSolid extends Solid {
+  float r=85, h=260; int sides=48; CylinderSolid() { super("CYLINDER"); }
+  float width(){return r*2;} float depth(){return r*2;} float totalHeight(){return h;} float halfHeight(){return h/2.0;} float contactArea(){return PI*r*r;} String dimensionText(){return "D = "+nf(r*2,1,0)+" H = "+nf(h,1,0);}
+  void drawTransparentShell() { hint(DISABLE_DEPTH_MASK); drawCylinderBand(r, h, centerY, color(100, 175, 225, 25), sides); hint(ENABLE_DEPTH_MASK); }
+  void drawStress(float p, float s) { float str=s/peakStressMPa, f=lerp(h*0.05, h, p); int b=36; float bh=f/b; for(int i=0; i<b; i++) { float c=i*bh+bh/2.0; drawCylinderBand(r*0.96, bh, centerY+(h/2.0-c), stressColor(c/f, str), sides); } }
+  void drawCrossSection(float s) { float y=map(s, 0, 1, -h/2, h/2); pushMatrix(); translate(0, centerY+y, 0); rotateX(HALF_PI); fill(255,110,0,80); stroke(255, 110, 0); strokeWeight(5); ellipse(0, 0, r*2*0.95, r*2*0.95); popMatrix(); }
+  void drawAnnotations() { drawWorldText("CYLINDER", -125, centerY - h / 2 - 25, 0, 20, color(20)); }
+}
+void drawCylinderBand(float r, float bh, float cy, color c, int sides) { float y1=cy-bh/2.0, y2=cy+bh/2.0; pushMatrix(); noStroke(); fill(c); beginShape(QUAD_STRIP); for(int i=0; i<=sides; i++){float a=TWO_PI*i/sides; vertex(cos(a)*r, y1, sin(a)*r); vertex(cos(a)*r, y2, sin(a)*r);} endShape(); beginShape(TRIANGLE_FAN); vertex(0, y1, 0); for(int i=0; i<=sides; i++){float a=TWO_PI*i/sides; vertex(cos(a)*r, y1, sin(a)*r);} endShape(); popMatrix(); }
+
+class ConeSolid extends Solid {
+  float r=100, h=260; int sides=48; ConeSolid() { super("CONE"); }
+  float width(){return r*2;} float depth(){return r*2;} float totalHeight(){return h;} float halfHeight(){return h/2.0;} float contactArea(){return PI*r*r;} String dimensionText(){return "Base D = "+nf(r*2,1,0)+" H = "+nf(h,1,0);}
+  void drawTransparentShell() { hint(DISABLE_DEPTH_MASK); drawConeBand(r, 0, h, centerY, color(120, 170, 225, 25), sides); hint(ENABLE_DEPTH_MASK); }
+  void drawStress(float p, float s) { float str=s/peakStressMPa, f=lerp(h*0.05, h, p); int b=36; float bh=f/b; for(int i=0; i<b; i++){float c=i*bh+bh/2.0, rr=r*constrain(1.0-c/h, 0.02, 1.0); drawConeBand(rr, rr-(r*bh/h), bh, centerY+(h/2.0-c), stressColor(c/f, str), sides);} }
+  void drawCrossSection(float s) { float y=map(s, 0, 1, -h/2, h/2), rr=r*(1.0-(y+h/2)/h); pushMatrix(); translate(0, centerY+y, 0); rotateX(HALF_PI); fill(255,110,0,80); stroke(255, 110, 0); strokeWeight(5); ellipse(0, 0, rr*2, rr*2); popMatrix(); }
+  void drawAnnotations() { drawWorldText("CONE", -100, centerY - h / 2 - 25, 0, 20, color(20)); }
+}
+void drawConeBand(float rBottom, float rTop, float bh, float cy, color c, int sides) { float y1=cy+bh/2.0, y2=cy-bh/2.0; pushMatrix(); noStroke(); fill(c); beginShape(QUAD_STRIP); for(int i=0; i<=sides; i++){float a=TWO_PI*i/sides; vertex(cos(a)*rBottom, y1, sin(a)*rBottom); vertex(cos(a)*rTop, y2, sin(a)*rTop);} endShape(); popMatrix(); }
+
+class SphereSolid extends Solid {
+  float r=120; SphereSolid() { super("SPHERE"); }
+  float width(){return r*2;} float depth(){return r*2;} float totalHeight(){return r*2;} float halfHeight(){return r;} float contactArea(){return PI*r*r;} String dimensionText(){return "Diameter D = "+nf(r*2,1,0);}
+  void drawTransparentShell() { hint(DISABLE_DEPTH_MASK); pushMatrix(); translate(0, centerY, 0); fill(120, 180, 225, 40); stroke(20, 55, 80, 160); strokeWeight(2); sphereDetail(32); sphere(r); popMatrix(); hint(ENABLE_DEPTH_MASK); }
+  void drawStress(float p, float s) { float str=s/peakStressMPa, f=lerp(r*0.1, r*2, p); int b=38; float bh=f/b; for(int i=0; i<b; i++){float c=i*bh+bh/2.0, yL=r-c, rq=r*r-yL*yL; if(rq>0) drawCylinderBand(sqrt(rq)*0.97, bh+1, centerY+yL, stressColor(c/f, str), 40);} }
+  void drawCrossSection(float s) { float y=map(s, 0, 1, -r, r), rq=r*r-y*y; if(rq>0){pushMatrix(); translate(0, centerY+y, 0); rotateX(HALF_PI); fill(255,110,0,80); stroke(255, 110, 0); strokeWeight(5); ellipse(0, 0, sqrt(rq)*2, sqrt(rq)*2); popMatrix();} }
+  void drawAnnotations() { drawWorldText("SPHERE", -105, centerY - r - 25, 0, 20, color(20)); }
+}
+
+class TorusSolid extends Solid {
+  TorusSolid() { super("TORUS"); }
+  float width(){return 2.0*(TORUS_MAJOR_R+TORUS_TUBE_R);} float depth(){return 2.0*(TORUS_MAJOR_R+TORUS_TUBE_R);} float totalHeight(){return 2.0*TORUS_TUBE_R;} float halfHeight(){return TORUS_TUBE_R;} float contactArea(){return PI*TORUS_TUBE_R*TORUS_TUBE_R;} String dimensionText(){return "Major D = "+nf(TORUS_MAJOR_R*2,1,0)+" Tube D = "+nf(TORUS_TUBE_R*2,1,0);}
+  void drawTransparentShell() { hint(DISABLE_DEPTH_MASK); drawTorus(centerY, false, 1.0, TORUS_TUBE_R*2.0); hint(ENABLE_DEPTH_MASK); }
+  void drawStress(float p, float s) { drawTorus(centerY, true, constrain(s/peakStressMPa, 0, 1), lerp(TORUS_TUBE_R*0.10, TORUS_TUBE_R*2.0, p)); }
+  void drawCrossSection(float s) { float y=map(s, 0, 1, -TORUS_TUBE_R, TORUS_TUBE_R), q=sqrt(max(0, TORUS_TUBE_R*TORUS_TUBE_R-y*y)); if(q>0){pushMatrix(); translate(0, centerY+y, 0); rotateX(HALF_PI); fill(255,110,0,80); stroke(255, 110, 0); strokeWeight(5); ellipse(0, 0, (TORUS_MAJOR_R+q)*2, (TORUS_MAJOR_R+q)*2); if(TORUS_MAJOR_R-q>1) ellipse(0, 0, (TORUS_MAJOR_R-q)*2, (TORUS_MAJOR_R-q)*2); popMatrix();} }
+  void drawAnnotations() { drawWorldText("TORUS", -95, centerY - TORUS_TUBE_R - 25, 0, 20, color(20)); }
+}
+void drawTorus(float cy, boolean sm, float str, float front) { pushMatrix(); translate(0, cy, 0); for(int i=0; i<TORUS_U_STEPS; i++){float u0=TWO_PI*i/TORUS_U_STEPS, u1=TWO_PI*(i+1)/TORUS_U_STEPS; beginShape(QUAD_STRIP); for(int j=0; j<=TORUS_V_STEPS; j++){float v=TWO_PI*j/TORUS_V_STEPS, fB=TORUS_TUBE_R*sin(v)+TORUS_TUBE_R; if(sm && fB>front){fill(0,0); noStroke();} else if(sm){fill(stressColor(fB/front, str)); noStroke();} else{fill(120, 180, 225, 30); stroke(25, 55, 80, 100);} vertex((TORUS_MAJOR_R+TORUS_TUBE_R*cos(v))*cos(u0), TORUS_TUBE_R*sin(v), (TORUS_MAJOR_R+TORUS_TUBE_R*cos(v))*sin(u0)); vertex((TORUS_MAJOR_R+TORUS_TUBE_R*cos(v))*cos(u1), TORUS_TUBE_R*sin(v), (TORUS_MAJOR_R+TORUS_TUBE_R*cos(v))*sin(u1));} endShape();} popMatrix(); }
+
+// ============================================================
+// COMPOSITE SOLID WITH CYLINDER TYRES
+// ============================================================
+abstract class CompositeSolid extends Solid {
+  float[][] parts; // {w, h, d, x, y, z, type(0=box, 1=X-Cylinder)}
+  CompositeSolid(String n) { super(n); }
+  
+  void drawTransparentShell() {
+    hint(DISABLE_DEPTH_MASK);
+    pushMatrix(); translate(0, centerY, 0);
+    for (float[] p : parts) {
+      float type = p.length > 6 ? p[6] : 0;
+      pushMatrix(); translate(p[3], p[4], p[5]);
+      fill(100, 180, 225, 30); stroke(15, 50, 75, 200); strokeWeight(3);
+      if (type == 0) box(p[0], p[1], p[2]);
+      else if (type == 1) { rotateZ(HALF_PI); drawCylinderBand(p[1]/2.0, p[0], 0, color(100, 180, 225, 30), 24); }
+      popMatrix();
+    }
+    popMatrix();
+    hint(ENABLE_DEPTH_MASK);
+  }
+
+  void drawStress(float progress, float stress) {
+    float strength = stress / peakStressMPa, front = lerp(totalHeight()*0.04, totalHeight(), progress);
+    pushMatrix(); translate(0, centerY, 0);
+    for (float[] p : parts) {
+      float compW=p[0], compH=p[1], compD=p[2], compX=p[3], compY=p[4], compZ=p[5], type=p.length>6?p[6]:0;
+      float compBot = compY + compH/2.0, solidBot = halfHeight();
+      if (solidBot - compBot >= front) continue;
+
+      int bands = max(2, int(compH / 5.0)); float bh = compH / bands;
+      for (int i = 0; i < bands; i++) {
+        float bY = compBot - i*bh - bh/2.0, fromSolBot = solidBot - bY;
+        if (fromSolBot > front) continue;
+        pushMatrix(); translate(compX, bY, compZ);
+        fill(stressColor(fromSolBot / front, strength)); noStroke();
+        if (type == 0) box(compW*0.94, bh+1.2, compD*0.94);
+        else if (type == 1) {
+          float dy = abs(bY - compY), val = (compH/2.0)*(compH/2.0) - dy*dy;
+          if (val > 0) box(compW*0.94, bh+1.2, sqrt(val)*2.0 * 0.94); // Math cylinder chord
+        }
+        popMatrix();
+      }
+    }
+    popMatrix();
+  }
+
+  void drawCrossSection(float slider) {
+    float localY = map(slider, 0, 1, -halfHeight(), halfHeight());
+    pushMatrix(); translate(0, centerY + localY, 0); rotateX(HALF_PI); fill(255,110,0,80); stroke(255, 110, 0); strokeWeight(5); rectMode(CENTER);
+    for (float[] p : parts) {
+      float type=p.length>6?p[6]:0, cT=p[4]-p[1]/2.0, cB=p[4]+p[1]/2.0;
+      if (localY >= cT && localY <= cB) {
+        pushMatrix(); translate(p[3], p[5], 0);
+        if (type == 0) rect(0, 0, p[0]*0.96, p[2]*0.96);
+        else if (type == 1) { float dy = abs(localY - p[4]), val = (p[1]/2.0)*(p[1]/2.0) - dy*dy; if(val>0) rect(0, 0, p[0]*0.96, sqrt(val)*2.0 * 0.96); }
+        popMatrix();
+      }
+    }
+    popMatrix();
+  }
+}
+
+class BikeSolid extends CompositeSolid {
+  BikeSolid() {
+    super("MOTORBIKE");
+    parts = new float[][] {
+      {16, 60, 60, 0, 40, -80, 1}, // Front Tyre (Type 1 = Math Cylinder)
+      {16, 60, 60, 0, 40, 80, 1},  // Rear Tyre
+      {35, 40, 90, 0, 10, 0, 0},   // Base
+      {28, 30, 130, 0, -25, -15, 0},// Tank
+      {20, 70, 20, 0, -35, -70, 0}, // Forks
+      {80, 12, 12, 0, -65, -70, 0}  // Handles
+    };
+  }
+  float width(){return 80;} float depth(){return 220;} float totalHeight(){return 140;} float halfHeight(){return 70;} float contactArea(){return 2*(16*20);} String dimensionText(){return "L = 220, W = 80, H = 140";}
+  void drawAnnotations() { drawWorldText("BIKE", -100, centerY - 95, 0, 20, color(20)); }
+}
+
+class AmbassadorCarSolid extends CompositeSolid {
+  AmbassadorCarSolid() {
+    super("AMBASSADOR CAR");
+    parts = new float[][] {
+      {130, 40, 270, 0, 0, 0, 0},     // Chassis
+      {100, 40, 150, 0, -40, -20, 0}, // Cabin
+      {24, 40, 40, -60, 40, -85, 1},  // Tyres...
+      {24, 40, 40, 60, 40, -85, 1},
+      {24, 40, 40, -60, 40, 85, 1},
+      {24, 40, 40, 60, 40, 85, 1}
+    };
+  }
+  float width(){return 144;} float depth(){return 270;} float totalHeight(){return 120;} float halfHeight(){return 60;} float contactArea(){return 4*(24*15);} String dimensionText(){return "L = 270, W = 144, H = 120";}
+  void drawAnnotations() { drawWorldText("CAR", -150, centerY - 85, 0, 20, color(20)); }
+}
+
+class RaceCarSolid extends CompositeSolid {
+  RaceCarSolid() {
+    super("RACE CAR");
+    parts = new float[][] {
+      // Main Chassis (w, h, d, x, y, z, type)
+      {50, 30, 240, 0, 17, 0, 0},     
+      // Nose
+      {30, 20, 60, 0, 22, -150, 0},  
+      // Front Wing
+      {130, 8, 35, 0, 28, -170, 0},  
+      // Cockpit/Engine Cover
+      {40, 35, 100, 0, -15.5, 20, 0},
+      // Rear Wing Main
+      {120, 8, 40, 0, -32, 110, 0},  
+      // Rear Wing Struts
+      {10, 40, 30, -20, -8, 110, 0}, 
+      {10, 40, 30, 20, -8, 110, 0},  
+      
+      // FRONT AXLE (Type 1 = X-Cylinder) connecting front wheels
+      {140, 12, 12, 0, 17, -120, 1}, 
+      // REAR AXLE (Type 1 = X-Cylinder) connecting rear wheels
+      {150, 16, 16, 0, 12, 90, 1},    
+      
+      // FRONT TYRES (Type 1 = X-Cylinder)
+      {30, 50, 50, -75, 17, -120, 1},
+      {30, 50, 50, 75, 17, -120, 1}, 
+      
+      // REAR TYRES (Type 1 = X-Cylinder) - Slightly larger
+      {40, 60, 60, -85, 12, 90, 1},   
+      {40, 60, 60, 85, 12, 90, 1}     
+    };
+  }
+  float width(){return 210;} 
+  float depth(){return 380;} 
+  float totalHeight(){return 84;} 
+  float halfHeight(){return 42;} 
+  float contactArea(){return 2*(30*15) + 2*(40*15);} 
+  String dimensionText(){return "L = 380, W = 210, H = 84";}
+  void drawAnnotations() { drawWorldText("RACE CAR", -130, centerY - 60, 0, 20, color(20)); }
+}
+
+// ============================================================
+// UI CLASSES
+// ============================================================
+class UIButton {
+  float x, y, w, h;
+  String label;
+
+  UIButton(float x, float y, float w, float h, String label) {
+    this.x = x;
+    this.y = y;
+    this.w = w;
+    this.h = h;
+    this.label = label;
+  }
+
+  void draw() {
+    hint(DISABLE_DEPTH_TEST);
+    camera();
+    
+    fill(210, 215, 220);
+    stroke(120);
+    strokeWeight(2);
+    rectMode(CORNER);
+    rect(x, y, w, h, 6);
+    
+    fill(30);
+    textAlign(CENTER, CENTER);
+    textSize(h * 0.4);
+    text(label, x + (w / 2.0), y + (h / 2.0));
+    
+    hint(ENABLE_DEPTH_TEST);
+  }
+
+  boolean contains(float px, float py) {
+    return px >= x && px <= x + w && py >= y && py <= y + h;
+  }
+}
+
+class UISlider {
+  float x, y, w;
+  float value;
+  boolean active = false;
+
+  UISlider(float x, float y, float w, float v) {
+    this.x = x;
+    this.y = y;
+    this.w = w;
+    this.value = v;
+  }
+
+  void draw(String title) {
+    hint(DISABLE_DEPTH_TEST);
+    camera();
+
+    // Background container
+    fill(255, 255, 255, 238);
+    stroke(100);
+    strokeWeight(2);
+    rectMode(CORNER);
+    rect(x - 10, y - 30, w + 20, 65, 8);
+
+    // Title
+    fill(0, 100, 200);
+    textAlign(CENTER, TOP);
+    textSize(14);
+    text(title, x + w / 2, y - 20);
+
+    // Track
+    stroke(180);
+    strokeWeight(6);
+    line(x, y + 15, x + w, y + 15);
+
+    // Active Track
+    stroke(0, 120, 240);
+    float knobX = x + (w * value);
+    line(x, y + 15, knobX, y + 15);
+
+    // Knob
+    noStroke();
+    fill(0, 100, 220);
+    ellipse(knobX, y + 15, 24, 24);
+    fill(255);
+    ellipse(knobX, y + 15, 10, 10);
+
+    hint(ENABLE_DEPTH_TEST);
+  }
+
+  boolean contains(float px, float py) {
+    // Generous touch hit area
+    return px >= x - 20 && px <= x + w + 20 && py >= y - 30 && py <= y + 40;
+  }
+
+  boolean handleDrag(float px, float py) {
+    if (active) {
+      value = constrain((px - x) / w, 0, 1);
+      return true;
+    }
+    return false;
+  }
+}
